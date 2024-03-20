@@ -117,11 +117,11 @@ fn main() {
             }
 
             i += 1;
+            file_count += 1;
         } else {
             repeated_brackets += 1;
         }
 
-        file_count += 1;
         if file_count >= CREATE_NEW_FILE_BRACKET_THRESHOLD {
             file_count = 0;
             file_number += 1;
