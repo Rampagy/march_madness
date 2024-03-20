@@ -2,8 +2,11 @@ use rand::Rng;
 use std::fs;
 use std::fs::OpenOptions;
 use std::io::Write;
+use std::collections::HashSet;
 
-const NUM_OF_BRACKETS: usize = 10_000_000;
+const NUM_OF_BRACKETS: usize = 10;//_000_000;
+const FILE_PATH: &str = "brackets.txt";
+
 
 
 fn get_round_winners(teams: &Vec<u8>, rng: &mut rand::prelude::ThreadRng) -> Vec<u8> {
@@ -37,18 +40,40 @@ fn get_round_winners(teams: &Vec<u8>, rng: &mut rand::prelude::ThreadRng) -> Vec
 }
 
 
+fn get_human_readable_bracket(bracket: &[u8; 63]) -> String {
+    let mut human_bracket: String = "".to_string();
+
+    let mut games: [u8; 2] = [0, 32];
+    let mut games_left: u8 = 32;
+    while games_left > 0 {
+
+        for i in games[0]..games[1] {
+            human_bracket += format!("{} ", bracket[i as usize]).as_str();
+        }
+
+        human_bracket = human_bracket.trim().to_string() + ";";
+        games[0] = games[1];
+        games_left >>= 1;
+        games[1] += games_left;
+    }
+
+    human_bracket = human_bracket.trim_end_matches(";").to_string();
+    return human_bracket;
+}
+
+
 fn main() {
-    let file_path: &str = "brackets.txt";
+    let mut unique_brackets: HashSet<[u8; 63]> = HashSet::with_capacity(NUM_OF_BRACKETS);
 
     let mut f: fs::File = OpenOptions::new()
         .create(true)
         .write(true)
         .append(true)
-        .open(file_path)
+        .open(FILE_PATH)
         .unwrap();
 
     for i in 0..NUM_OF_BRACKETS {
-        let mut bracket: String = "".to_string();
+        let mut bracket: [u8; 63] = [0; 63];
 
         // initialize the starting bracket
         let mut teams: Vec<u8> = vec![
@@ -59,24 +84,35 @@ fn main() {
         ];
 
         let mut rng: rand::prelude::ThreadRng = rand::thread_rng();
-
+        let mut index: usize = 0;
         while (&teams).len() > 1 {
             teams = get_round_winners(&teams, &mut rng);
 
             for team in &teams {
-                bracket += format!("{} ", team).as_str();
+                bracket[index] = *team;
+                index += 1;
             }
-
-            bracket = bracket.trim().to_string();
-            bracket += ";";
         }
 
-        let _ = bracket.trim_end_matches(';');
-        bracket += "\n";
-        let _ = f.write(bracket.as_bytes());
+        let human_bracket: String = get_human_readable_bracket(&bracket) + "\n";
+        let _ = f.write(human_bracket.as_bytes());
 
-        if i % 10000 == 0 {
+        if i % 10_000 == 0 {
             println!("{}", i);
         }
+    }
+}
+
+
+
+#[cfg(test)] #[allow(non_snake_case)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_get_human_readable_bracket() {
+        let a: [u8; 63] = [35; 63];
+        let b: String = get_human_readable_bracket(&a);
+        assert_eq!(b, "35 35 35 35 35 35 35 35 35 35 35 35 35 35 35 35 35 35 35 35 35 35 35 35 35 35 35 35 35 35 35 35;35 35 35 35 35 35 35 35 35 35 35 35 35 35 35 35;35 35 35 35 35 35 35 35;35 35 35 35;35 35;35".to_string());
     }
 }
