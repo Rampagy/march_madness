@@ -3,7 +3,7 @@ use std::fs;
 use std::fs::OpenOptions;
 use std::io::Write;
 
-const NUM_OF_BRACKETS: usize = 100;
+const NUM_OF_BRACKETS: usize = 10_000_000;
 
 
 fn get_round_winners(teams: &Vec<u8>, rng: &mut rand::prelude::ThreadRng) -> Vec<u8> {
@@ -41,6 +41,8 @@ fn main() {
     let file_path: &str = "brackets.txt";
 
     let mut f: fs::File = OpenOptions::new()
+        .create(true)
+        .write(true)
         .append(true)
         .open(file_path)
         .unwrap();
