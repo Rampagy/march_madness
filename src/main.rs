@@ -4,8 +4,10 @@ use std::fs::OpenOptions;
 use std::io::Write;
 use std::collections::HashSet;
 
-const NUM_OF_BRACKETS: usize = 10;//_000_000;
-const FILE_PATH: &str = "brackets.txt";
+
+const NUM_OF_BRACKETS: usize = 20_000_000;
+const CREATE_NEW_FILE_BRACKET_THRESHOLD: usize = 10_000_000; // after so many brackets start a new file
+const FILE_NAME: &str = "brackets";
 
 
 
@@ -62,45 +64,82 @@ fn get_human_readable_bracket(bracket: &[u8; 63]) -> String {
 }
 
 
+fn generate_bracket(bracket: &mut [u8; 63]) {
+    // initialize the starting bracket
+    let mut teams: Vec<u8> = vec![
+        1,  16,  8,  9,  5, 12,  4, 13,  6, 11,  3, 14,  7, 10,  2, 15, // east
+        17, 32, 24, 25, 21, 28, 20, 29, 22, 27, 19, 30, 23, 26, 18, 31, // west
+        33, 48, 40, 41, 37, 44, 36, 45, 38, 43, 35, 46, 39, 42, 34, 47, // south
+        49, 64, 56, 57, 53, 60, 52, 61, 54, 59, 51, 62, 55, 58, 50, 63, // midwest
+    ];
+
+    let mut rng: rand::prelude::ThreadRng = rand::thread_rng();
+    let mut index: usize = 0;
+    while (&teams).len() > 1 {
+        teams = get_round_winners(&teams, &mut rng);
+
+        for team in &teams {
+            bracket[index] = *team;
+            index += 1;
+        }
+    }
+}
+
+
 fn main() {
     let mut unique_brackets: HashSet<[u8; 63]> = HashSet::with_capacity(NUM_OF_BRACKETS);
+    let mut i: usize = 0;
+    let mut repeated_brackets: usize = 0;
+    let mut file_number: usize = 0;
+    let mut file_count: usize = 0;
 
+    // open a file
     let mut f: fs::File = OpenOptions::new()
         .create(true)
         .write(true)
         .append(true)
-        .open(FILE_PATH)
+        .open(format!("{}_{}.txt", FILE_NAME, file_number))
         .unwrap();
 
-    for i in 0..NUM_OF_BRACKETS {
+    while i < NUM_OF_BRACKETS {
         let mut bracket: [u8; 63] = [0; 63];
+        generate_bracket(&mut bracket);
 
-        // initialize the starting bracket
-        let mut teams: Vec<u8> = vec![
-            1,  16,  8,  9,  5, 12,  4, 13,  6, 11,  3, 14,  7, 10,  2, 15, // east
-            17, 32, 24, 25, 21, 28, 20, 29, 22, 27, 19, 30, 23, 26, 18, 31, // west
-            33, 48, 40, 41, 37, 44, 36, 45, 38, 43, 35, 46, 39, 42, 34, 47, // south
-            49, 64, 56, 57, 53, 60, 52, 61, 54, 59, 51, 62, 55, 58, 50, 63, // midwest
-        ];
+        // only write to the file if it's a unique bracket (inserted into unique_brackets)
+        if unique_brackets.insert(bracket) {
 
-        let mut rng: rand::prelude::ThreadRng = rand::thread_rng();
-        let mut index: usize = 0;
-        while (&teams).len() > 1 {
-            teams = get_round_winners(&teams, &mut rng);
+            let human_bracket: String = get_human_readable_bracket(&bracket) + "\n";
+            let _ = f.write(human_bracket.as_bytes());
 
-            for team in &teams {
-                bracket[index] = *team;
-                index += 1;
+            if (i+1) % 1_000_000 == 0 {
+                println!("{}", i);
+                println!("repeated brackets: {}", repeated_brackets);
+            }
+
+            i += 1;
+        } else {
+            repeated_brackets += 1;
+        }
+
+        file_count += 1;
+        if file_count >= CREATE_NEW_FILE_BRACKET_THRESHOLD {
+            file_count = 0;
+            file_number += 1;
+
+            // create a new file if there are more brackets to create
+            println!("Creating new file..");
+            if i < NUM_OF_BRACKETS {
+                f = OpenOptions::new()
+                    .create(true)
+                    .write(true)
+                    .append(true)
+                    .open(format!("{}_{}.txt", FILE_NAME, file_number))
+                    .unwrap();
             }
         }
-
-        let human_bracket: String = get_human_readable_bracket(&bracket) + "\n";
-        let _ = f.write(human_bracket.as_bytes());
-
-        if i % 10_000 == 0 {
-            println!("{}", i);
-        }
     }
+
+    println!("repeated brackets: {}", repeated_brackets);
 }
 
 
