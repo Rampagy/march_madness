@@ -126,7 +126,7 @@ fn main() {
             file_count = 0;
             file_number += 1;
 
-            // create a new file if there are more brackets to create
+            // create a new file (if there are more brackets to create)
             println!("Creating new file..");
             if i < NUM_OF_BRACKETS {
                 f = OpenOptions::new()
