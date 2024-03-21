@@ -1,9 +1,12 @@
 use rand::Rng;
 use std::env;
 use std::fs;
+use std::fs::File;
 use std::fs::OpenOptions;
 use std::io::Write;
+use std::io::{prelude::*, BufReader};
 use std::collections::HashSet;
+use glob::glob;
 
 
 const CREATE_NEW_FILE_BRACKET_THRESHOLD: usize = 10_000_000; // after so many brackets start a new file
@@ -85,6 +88,7 @@ fn generate_bracket(bracket: &mut [u8; 63]) {
     }
 }
 
+
 fn generate_brackets(num_of_brackets: usize) {
     let mut unique_brackets: HashSet<[u8; 63]> = HashSet::with_capacity(num_of_brackets);
     let mut i: usize = 0;
@@ -142,23 +146,74 @@ fn generate_brackets(num_of_brackets: usize) {
 }
 
 
-fn score_brackets() {
-    let mut winning_bracket: [u8; 63] = [0; 63];
-    // Find the winning bracket text file
-    let winning_bracket_file_contents: String = fs::read_to_string(WINNING_BRACKET_FILE_NAME).expect("Should have been able to read winning_bracket.txt");
-
+fn parse_bracket(raw_bracket: &String) -> [u8; 63] {
+    let mut bracket: [u8; 63] = [0; 63];
     let mut team_index: usize = 0;
-    for round_results in winning_bracket_file_contents.trim().split(";") {
+    for round_results in raw_bracket.trim().split(";") {
         for team in round_results.trim().split_ascii_whitespace() {
-            winning_bracket[team_index] = team.parse::<u8>().unwrap_or(0);
+            bracket[team_index] = team.parse::<u8>().unwrap_or(0);
             team_index+=1;
         }
     }
 
-    // TODO: Parse the contents of the winning bracket text file
-    // TODO: Find all of the text files that match this pattern: NUM_brackets*.txt
-    // TODO: go line by line of each file scoring each bracket -> store the average and the top ten scores (filename, line number, score)
-    // TODO: print out summary and also save summary to file
+    return bracket;
+}
+
+fn score_bracket(bracket: &[u8; 63], winning_bracket: &[u8; 63]) -> u8 {
+    let mut score: u8 = 0;
+    let mut round_length: u8 = 32; // 32 results in the first round
+    let mut round_points: u8 = 1; // points per correct team
+
+    let mut rounds: u8 = 0;
+    for (team1, winning_team) in bracket.into_iter().zip(winning_bracket.into_iter()) {
+        if team1 == winning_team {
+            score += round_points;
+        }
+
+        rounds += 1;
+        if rounds >= round_length {
+            round_points <<= 1;
+            round_length += 32 / round_points;
+        }
+    }
+
+    return score;
+}
+
+fn score_brackets() {
+    let winning_bracket: [u8; 63];
+
+    { // Find the winning bracket text file
+        let winning_bracket_file_contents: String = fs::read_to_string(WINNING_BRACKET_FILE_NAME).expect("Should have been able to read winning_bracket.txt");
+        winning_bracket = parse_bracket(&winning_bracket_file_contents);
+        println!("winning bracket: {}", get_human_readable_bracket(&winning_bracket));
+    }
+
+    let mut top_brackets: Vec<(u8, usize, String)> = Vec::with_capacity(11);
+    for entry in glob("*_brackets*.txt").expect("Should have found some files that match \'*brackets*.txt\' to score") {
+        let scoring_bracket_filename: String = entry.unwrap().into_os_string().into_string().unwrap();
+
+        let file: File = File::open(&scoring_bracket_filename).unwrap();
+        let reader: BufReader<File> = BufReader::new(file);
+
+        for (line_number, line) in reader.lines().enumerate() {
+            let bracket: [u8; 63] = parse_bracket(&line.unwrap_or("".to_string()));
+            let score: u8 = score_bracket(&bracket, &winning_bracket);
+
+            top_brackets.push((score, line_number, scoring_bracket_filename.clone()));
+            top_brackets.sort_by_key(|x| (*x).0);
+            top_brackets.reverse();
+
+            // if the length is longer than 10, remove the last one as it's not top 10
+            if top_brackets.len() > 10 {
+                top_brackets.remove(10);
+            }
+        }
+    }
+
+    for (place, bracket_stats) in top_brackets.iter().enumerate() {
+        println!("place: {}   score: {:<3}   line_number: {:<12}   file: {}", place, bracket_stats.0, bracket_stats.1+1, bracket_stats.2);
+    }
 }
 
 
@@ -200,5 +255,17 @@ mod tests {
         let a: [u8; 63] = [35; 63];
         let b: String = get_human_readable_bracket(&a);
         assert_eq!(b, "35 35 35 35 35 35 35 35 35 35 35 35 35 35 35 35 35 35 35 35 35 35 35 35 35 35 35 35 35 35 35 35;35 35 35 35 35 35 35 35 35 35 35 35 35 35 35 35;35 35 35 35 35 35 35 35;35 35 35 35;35 35;35".to_string());
+    }
+
+    #[test]
+    fn test_score_bracket() {
+        let winning_bracket: &str = "1 8 5 4 11 14 7 2 17 24 28 29 22 19 23 18 33 41 44 45 38 35 42 34 49 57 53 52 59 51 55 50;1 4 11 7 17 29 19 18 33 44 38 34 49 52 51 50;1 7 17 18 33 34 49 50;1 17 33 49;17 33;17";
+        let test_bracket: &str = "1 8 5 4 11 14 7 2 17 24 28 29 22 19 23 18 33 41 44 45 38 35 42 34 49 57 53 52 59 51 55 50;1 4 11 7 17 29 19 18 33 44 38 34 49 52 51 50;1 7 17 18 33 34 49 50;1 17 33 49;17 33;0";
+
+        let winning_bracket_encoded: [u8; 63] = parse_bracket(&winning_bracket.to_string());
+        let test_bracket_encoded: [u8; 63] = parse_bracket(&test_bracket.to_string());
+
+        assert_eq!(score_bracket(&winning_bracket_encoded, &winning_bracket_encoded), 192);
+        assert_eq!(score_bracket(&winning_bracket_encoded, &test_bracket_encoded), 160);
     }
 }
