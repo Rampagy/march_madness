@@ -1,14 +1,14 @@
 use rand::Rng;
+use std::env;
 use std::fs;
 use std::fs::OpenOptions;
 use std::io::Write;
 use std::collections::HashSet;
 
 
-const NUM_OF_BRACKETS: usize = 20_000_000;
 const CREATE_NEW_FILE_BRACKET_THRESHOLD: usize = 10_000_000; // after so many brackets start a new file
 const FILE_NAME: &str = "brackets";
-
+const WINNING_BRACKET_FILE_NAME: &str = "winning_bracket.txt";
 
 
 fn get_round_winners(teams: &Vec<u8>, rng: &mut rand::prelude::ThreadRng) -> Vec<u8> {
@@ -85,9 +85,8 @@ fn generate_bracket(bracket: &mut [u8; 63]) {
     }
 }
 
-
-fn main() {
-    let mut unique_brackets: HashSet<[u8; 63]> = HashSet::with_capacity(NUM_OF_BRACKETS);
+fn generate_brackets(num_of_brackets: usize) {
+    let mut unique_brackets: HashSet<[u8; 63]> = HashSet::with_capacity(num_of_brackets);
     let mut i: usize = 0;
     let mut repeated_brackets: usize = 0;
     let mut file_number: usize = 0;
@@ -98,10 +97,10 @@ fn main() {
         .create(true)
         .write(true)
         .append(true)
-        .open(format!("{}_{}.txt", FILE_NAME, file_number))
+        .open(format!("{}_{}.txt", file_number, FILE_NAME))
         .unwrap();
 
-    while i < NUM_OF_BRACKETS {
+    while i < num_of_brackets {
         let mut bracket: [u8; 63] = [0; 63];
         generate_bracket(&mut bracket);
 
@@ -128,7 +127,7 @@ fn main() {
 
             // create a new file (if there are more brackets to create)
             println!("Creating new file..");
-            if i < NUM_OF_BRACKETS {
+            if i < num_of_brackets {
                 f = OpenOptions::new()
                     .create(true)
                     .write(true)
@@ -140,6 +139,54 @@ fn main() {
     }
 
     println!("repeated brackets: {}", repeated_brackets);
+}
+
+
+fn score_brackets() {
+    let mut winning_bracket: [u8; 63] = [0; 63];
+    // Find the winning bracket text file
+    let winning_bracket_file_contents: String = fs::read_to_string(WINNING_BRACKET_FILE_NAME).expect("Should have been able to read winning_bracket.txt");
+
+    let mut team_index: usize = 0;
+    for round_results in winning_bracket_file_contents.trim().split(";") {
+        for team in round_results.trim().split_ascii_whitespace() {
+            winning_bracket[team_index] = team.parse::<u8>().unwrap_or(0);
+            team_index+=1;
+        }
+    }
+
+    // TODO: Parse the contents of the winning bracket text file
+    // TODO: Find all of the text files that match this pattern: NUM_brackets*.txt
+    // TODO: go line by line of each file scoring each bracket -> store the average and the top ten scores (filename, line number, score)
+    // TODO: print out summary and also save summary to file
+}
+
+
+fn main() {
+    let args: Vec<String> = env::args().collect();
+
+    if args.len() > 1 {
+        if args.len() > 2 {
+            if args[1].trim().to_uppercase() == "--GENERATE" {
+                // number is entered in millions (2 is interpreted as 2_000_000)
+                let num_brackets: usize = args[2].trim().parse::<usize>().unwrap_or(0) * 1_000_000;
+
+                if num_brackets > 0 {
+                    generate_brackets(num_brackets);
+                } else {
+                    println!("Invalid number of brackets to generate: {}", args[2]);
+                }
+            }
+        } else if args.len() == 2 {
+            if args[1].trim().to_uppercase() == "--SCORE" {
+                score_brackets();
+            }
+        }
+    } else {
+        // not enough arguments, do nothing
+        // TODO: print help instead
+        println!("Not enough arguments");
+    }
 }
 
 
