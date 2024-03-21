@@ -21,4 +21,4 @@ round 5 winners:                   17                                           
 round 6 winners:                                           17
 ```
 
-In this example `North Carolina` and `Purdue` played in the championship game and `North Carolina` won.
+Using the 2024 bracket keys for this example `North Carolina` and `Purdue` played in the championship game and `North Carolina` won.
