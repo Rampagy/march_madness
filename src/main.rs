@@ -27,14 +27,13 @@ fn get_round_winners(teams: &Vec<u8>, rng: &mut rand::prelude::ThreadRng) -> Vec
 
         if right_seed == 0.0 {
             right_seed = 16.0;
-        } 
+        }
 
         let prob_left_seed_wins: f32 = right_seed / (right_seed + left_seed);
 
         // sample the population given the above weight/probability
-        let rand_num: u8 = rng.gen::<u8>();
-
-        if (rand_num as f32) > (prob_left_seed_wins * (255 as f32)) {
+        let rand_num: u32 = rng.gen::<u32>();
+        if (rand_num as f32) > (prob_left_seed_wins * (u32::MAX as f32)) {
             let _ = winning_teams.push(teams[i+1]);
         } else {
             let _ = winning_teams.push(teams[i]);
@@ -136,7 +135,7 @@ fn generate_brackets(num_of_brackets: usize) {
                     .create(true)
                     .write(true)
                     .append(true)
-                    .open(format!("{}_{}.txt", FILE_NAME, file_number))
+                    .open(format!("{}_{}.txt", file_number, FILE_NAME))
                     .unwrap();
             }
         }
@@ -180,16 +179,45 @@ fn score_bracket(bracket: &[u8; 63], winning_bracket: &[u8; 63]) -> u8 {
     return score;
 }
 
+
+fn calc_max_bracket_points(winning_bracket: &[u8; 63]) -> u8 {
+    let mut score: u8 = 0;
+    let mut round_length: u8 = 32; // 32 results in the first round
+    let mut round_points: u8 = 1; // points per correct team
+
+    let mut rounds: u8 = 0;
+    for winning_team in winning_bracket.into_iter() {
+        if *winning_team != 0 {
+            score += round_points;
+        }
+
+        rounds += 1;
+        if rounds >= round_length {
+            round_points <<= 1;
+            round_length += 32 / round_points;
+        }
+    }
+
+    return score;
+}
+
+
 fn score_brackets() {
     let winning_bracket: [u8; 63];
+    let max_bracket_score: u8;
+    let mut total_brackets: usize = 0;
+    let mut perfect_brackets: usize = 0;
+    let mut bracket_score_accumulator: usize = 0;
+    
 
     { // Find the winning bracket text file
         let winning_bracket_file_contents: String = fs::read_to_string(WINNING_BRACKET_FILE_NAME).expect("Should have been able to read winning_bracket.txt");
         winning_bracket = parse_bracket(&winning_bracket_file_contents);
-        println!("winning bracket: {}", get_human_readable_bracket(&winning_bracket));
+        println!("winning bracket: {}\n", get_human_readable_bracket(&winning_bracket));
+        max_bracket_score = calc_max_bracket_points(&winning_bracket);
     }
 
-    let mut top_brackets: Vec<(u8, usize, String)> = Vec::with_capacity(11);
+    let mut top_brackets: Vec<(u8, usize, String, [u8; 63])> = Vec::with_capacity(11);
     for entry in glob("*_brackets*.txt").expect("Should have found some files that match \'*brackets*.txt\' to score") {
         let scoring_bracket_filename: String = entry.unwrap().into_os_string().into_string().unwrap();
 
@@ -199,8 +227,14 @@ fn score_brackets() {
         for (line_number, line) in reader.lines().enumerate() {
             let bracket: [u8; 63] = parse_bracket(&line.unwrap_or("".to_string()));
             let score: u8 = score_bracket(&bracket, &winning_bracket);
+            bracket_score_accumulator = bracket_score_accumulator.saturating_add(score as usize);
 
-            top_brackets.push((score, line_number, scoring_bracket_filename.clone()));
+            // track number of perfect brackets
+            perfect_brackets += if score == max_bracket_score { 1 } else { 0 };
+
+            top_brackets.push(
+                (score, line_number, scoring_bracket_filename.clone(), bracket)
+            );
             top_brackets.sort_by_key(|x| (*x).0);
             top_brackets.reverse();
 
@@ -208,11 +242,23 @@ fn score_brackets() {
             if top_brackets.len() > 10 {
                 top_brackets.remove(10);
             }
+            total_brackets += 1;
         }
     }
 
+    let percent_perfect_brackets: f64 = if total_brackets > 0 {
+        perfect_brackets as f64 / total_brackets as f64
+    } else { 0 as f64 };
+    let average_bracket_score: f64 = if total_brackets > 0 {
+        bracket_score_accumulator as f64 / total_brackets as f64
+    } else { 0 as f64 };
+
+    println!("Perfect brackets: {} ({:.2}%)", perfect_brackets, percent_perfect_brackets);
+    println!("Average bracket score: {:.1}\n", average_bracket_score );
+
     for (place, bracket_stats) in top_brackets.iter().enumerate() {
-        println!("place: {}   score: {:<3}   line_number: {:<12}   file: {}", place, bracket_stats.0, bracket_stats.1+1, bracket_stats.2);
+        println!("place: {:<2}   score: {:<3}   line_number: {:<12}   file: {:<16}", place+1, bracket_stats.0, bracket_stats.1+1, bracket_stats.2);
+        println!("bracket: {}\n",  get_human_readable_bracket(&bracket_stats.3));
     }
 }
 
