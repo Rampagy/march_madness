@@ -247,14 +247,15 @@ fn score_brackets() {
     }
 
     let percent_perfect_brackets: f64 = if total_brackets > 0 {
-        perfect_brackets as f64 / total_brackets as f64
+        (perfect_brackets as f64 / total_brackets as f64) * 100 as f64
     } else { 0 as f64 };
     let average_bracket_score: f64 = if total_brackets > 0 {
         bracket_score_accumulator as f64 / total_brackets as f64
     } else { 0 as f64 };
 
+    println!("Total brackets: {}", total_brackets);
     println!("Perfect brackets: {} ({:.2}%)", perfect_brackets, percent_perfect_brackets);
-    println!("Average bracket score: {:.1}\n", average_bracket_score );
+    println!("Average bracket score: {:.1}\n", average_bracket_score);
 
     for (place, bracket_stats) in top_brackets.iter().enumerate() {
         println!("place: {:<2}   score: {:<3}   line_number: {:<12}   file: {:<16}", place+1, bracket_stats.0, bracket_stats.1+1, bracket_stats.2);
