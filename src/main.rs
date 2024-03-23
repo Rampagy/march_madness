@@ -3,15 +3,17 @@ use std::env;
 use std::fs;
 use std::fs::File;
 use std::fs::OpenOptions;
+use std::io::BufWriter;
 use std::io::Write;
 use std::io::{prelude::*, BufReader};
 use std::collections::HashSet;
 use glob::glob;
 
 
-const CREATE_NEW_FILE_BRACKET_THRESHOLD: usize = 10_000_000; // after so many brackets start a new file
+const CREATE_NEW_FILE_BRACKET_THRESHOLD: usize = 20_000_000; // after so many brackets start a new file
 const FILE_NAME: &str = "brackets";
 const WINNING_BRACKET_FILE_NAME: &str = "winning_bracket.txt";
+const BINARY_BYTE_OFFSET: u8 = 32;
 
 
 fn get_round_winners(teams: &Vec<u8>, rng: &mut rand::prelude::ThreadRng) -> Vec<u8> {
@@ -88,6 +90,23 @@ fn generate_bracket(bracket: &mut [u8; 63]) {
 }
 
 
+fn encode_to_bytes(bracket: &[u8; 63]) -> [u8; 64] {
+    let mut encoded_bracket: [u8; 64] = [0; 64];
+
+    for (idx, team) in bracket.into_iter().enumerate() {
+        encoded_bracket[idx] = team + BINARY_BYTE_OFFSET;
+    }
+
+    encoded_bracket[63] = b'\n';
+    return encoded_bracket;
+}
+
+
+fn decode_bytes(bracket: &[u8; 63]) -> [u8; 63] {
+    return bracket.map(|x| x-BINARY_BYTE_OFFSET);
+}
+
+
 fn generate_brackets(num_of_brackets: usize) {
     let mut unique_brackets: HashSet<[u8; 63]> = HashSet::with_capacity(num_of_brackets);
     let mut i: usize = 0;
@@ -100,8 +119,9 @@ fn generate_brackets(num_of_brackets: usize) {
         .create(true)
         .write(true)
         .append(true)
-        .open(format!("{}_{}.txt", file_number, FILE_NAME))
+        .open(format!("{}_{}.bin", file_number, FILE_NAME))
         .unwrap();
+    let mut writer: BufWriter<File> = BufWriter::new(f);
 
     while i < num_of_brackets {
         let mut bracket: [u8; 63] = [0; 63];
@@ -109,9 +129,7 @@ fn generate_brackets(num_of_brackets: usize) {
 
         // only write to the file if it's a unique bracket (inserted into unique_brackets)
         if unique_brackets.insert(bracket) {
-
-            let human_bracket: String = get_human_readable_bracket(&bracket) + "\n";
-            let _ = f.write(human_bracket.as_bytes());
+            let _ = writer.write(&encode_to_bytes(&bracket));
 
             if (i+1) % 1_000_000 == 0 {
                 println!("{}", i);
@@ -129,14 +147,15 @@ fn generate_brackets(num_of_brackets: usize) {
             file_number += 1;
 
             // create a new file (if there are more brackets to create)
-            println!("Creating new file..");
             if i < num_of_brackets {
+                println!("Creating new file..");
                 f = OpenOptions::new()
                     .create(true)
                     .write(true)
                     .append(true)
-                    .open(format!("{}_{}.txt", file_number, FILE_NAME))
+                    .open(format!("{}_{}.bin", file_number, FILE_NAME))
                     .unwrap();
+                writer = BufWriter::new(f);
             }
         }
     }
@@ -157,6 +176,7 @@ fn parse_bracket(raw_bracket: &String) -> [u8; 63] {
 
     return bracket;
 }
+
 
 fn score_bracket(bracket: &[u8; 63], winning_bracket: &[u8; 63]) -> u8 {
     let mut score: u8 = 0;
@@ -218,31 +238,44 @@ fn score_brackets() {
     }
 
     let mut top_brackets: Vec<(u8, usize, String, [u8; 63])> = Vec::with_capacity(11);
-    for entry in glob("*_brackets*.txt").expect("Should have found some files that match \'*brackets*.txt\' to score") {
+    for entry in glob("*_brackets*.txt").unwrap()
+                                                .chain(glob("*_brackets*.bin").unwrap()) {
         let scoring_bracket_filename: String = entry.unwrap().into_os_string().into_string().unwrap();
 
         let file: File = File::open(&scoring_bracket_filename).unwrap();
         let reader: BufReader<File> = BufReader::new(file);
 
         for (line_number, line) in reader.lines().enumerate() {
-            let bracket: [u8; 63] = parse_bracket(&line.unwrap_or("".to_string()));
+            let bracket: [u8; 63] =  if scoring_bracket_filename.trim_end().to_ascii_uppercase().ends_with(".TXT") {
+                // legacy format
+                parse_bracket(&line.unwrap_or("".to_string()))
+            } else {
+                // binary encoded format
+                let mut temp_bytes: [u8; 63] = [0; 63];
+                for (i, ch) in line.unwrap_or("".to_string()).chars().enumerate() {
+                    if i > 63 { break; }
+                    temp_bytes[i] = ch as u8;
+                }
+                decode_bytes(&temp_bytes)
+            };
+
             let score: u8 = score_bracket(&bracket, &winning_bracket);
             bracket_score_accumulator = bracket_score_accumulator.saturating_add(score as usize);
 
             // track number of perfect brackets
             perfect_brackets += if score == max_bracket_score { 1 } else { 0 };
-
-            top_brackets.push(
-                (score, line_number, scoring_bracket_filename.clone(), bracket)
-            );
-            top_brackets.sort_by_key(|x| (*x).0);
-            top_brackets.reverse();
-
-            // if the length is longer than 10, remove the last one as it's not top 10
-            if top_brackets.len() > 10 {
-                top_brackets.remove(10);
-            }
             total_brackets += 1;
+
+            if top_brackets.len() < 10 || score > top_brackets[top_brackets.len()-1].0 {
+                top_brackets.push(  (score, line_number, scoring_bracket_filename.clone(), bracket)  );
+                top_brackets.sort_by_key(|x| (*x).0);
+                top_brackets.reverse();
+
+                // if the length is longer than 10, remove the last one as it's not top 10
+                if top_brackets.len() > 10 {
+                    top_brackets.remove(10);
+                } 
+            }
         }
     }
 
@@ -268,7 +301,7 @@ fn main() {
     let args: Vec<String> = env::args().collect();
 
     if args.len() > 1 {
-        if args.len() > 2 {
+        if args.len() == 3 {
             if args[1].trim().to_uppercase() == "--GENERATE" {
                 // number is entered in millions (2 is interpreted as 2_000_000)
                 let num_brackets: usize = args[2].trim().parse::<usize>().unwrap_or(0) * 1_000_000;
@@ -278,11 +311,17 @@ fn main() {
                 } else {
                     println!("Invalid number of brackets to generate: {}", args[2]);
                 }
+            } else {
+                println!("Unrecognized arguments: {} {}", args[1], args[2]);
             }
         } else if args.len() == 2 {
             if args[1].trim().to_uppercase() == "--SCORE" {
                 score_brackets();
+            } else {
+                println!("Unrecognized argument: {}", args[1]);
             }
+        } else {
+            println!("Too many arguments!");
         }
     } else {
         // not enough arguments, do nothing
