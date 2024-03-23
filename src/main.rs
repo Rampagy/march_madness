@@ -346,12 +346,12 @@ mod tests {
     #[test]
     fn test_score_bracket() {
         let winning_bracket: &str = "1 8 5 4 11 14 7 2 17 24 28 29 22 19 23 18 33 41 44 45 38 35 42 34 49 57 53 52 59 51 55 50;1 4 11 7 17 29 19 18 33 44 38 34 49 52 51 50;1 7 17 18 33 34 49 50;1 17 33 49;17 33;17";
-        let test_bracket: &str = "1 8 5 4 11 14 7 2 17 24 28 29 22 19 23 18 33 41 44 45 38 35 42 34 49 57 53 52 59 51 55 50;1 4 11 7 17 29 19 18 33 44 38 34 49 52 51 50;1 7 17 18 33 34 49 50;1 17 33 49;17 33;0";
+        let test_bracket: &str = "0 8 5 4 11 14 7 2 17 24 28 29 22 19 23 18 33 41 44 45 38 35 42 34 49 57 53 52 59 51 55 50;1 0 11 7 17 29 19 18 33 44 38 34 49 52 51 50;1 7 0 18 33 34 49 50;1 17 33 0;17 0;0";
 
         let winning_bracket_encoded: [u8; 63] = parse_bracket(&winning_bracket.to_string());
         let test_bracket_encoded: [u8; 63] = parse_bracket(&test_bracket.to_string());
 
         assert_eq!(score_bracket(&winning_bracket_encoded, &winning_bracket_encoded), 192);
-        assert_eq!(score_bracket(&winning_bracket_encoded, &test_bracket_encoded), 160);
+        assert_eq!(score_bracket(&winning_bracket_encoded, &test_bracket_encoded), 129);
     }
 }
