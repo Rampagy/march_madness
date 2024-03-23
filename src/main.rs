@@ -14,6 +14,7 @@ const CREATE_NEW_FILE_BRACKET_THRESHOLD: usize = 20_000_000; // after so many br
 const FILE_NAME: &str = "brackets";
 const WINNING_BRACKET_FILE_NAME: &str = "winning_bracket.txt";
 const BINARY_BYTE_OFFSET: u8 = 32;
+const BRACKET_RESOLUTION: usize = 1_000_000; // minimum number (and step) of brackets
 
 
 fn get_round_winners(teams: &Vec<u8>, rng: &mut rand::prelude::ThreadRng) -> Vec<u8> {
@@ -240,6 +241,7 @@ fn score_brackets() {
     let mut top_brackets: Vec<(u8, usize, String, [u8; 63])> = Vec::with_capacity(11);
     for entry in glob("*_brackets*.txt").unwrap()
                                                 .chain(glob("*_brackets*.bin").unwrap()) {
+
         let scoring_bracket_filename: String = entry.unwrap().into_os_string().into_string().unwrap();
 
         let file: File = File::open(&scoring_bracket_filename).unwrap();
@@ -304,7 +306,7 @@ fn main() {
         if args.len() == 3 {
             if args[1].trim().to_uppercase() == "--GENERATE" {
                 // number is entered in millions (2 is interpreted as 2_000_000)
-                let num_brackets: usize = args[2].trim().parse::<usize>().unwrap_or(0) * 1_000_000;
+                let num_brackets: usize = args[2].trim().parse::<usize>().unwrap_or(0) * BRACKET_RESOLUTION;
 
                 if num_brackets > 0 {
                     generate_brackets(num_brackets);
