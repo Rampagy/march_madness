@@ -1,11 +1,8 @@
 use rand::Rng;
 use std::env;
 use std::fs;
-use std::fs::File;
-use std::fs::OpenOptions;
-use std::io::BufWriter;
-use std::io::Write;
-use std::io::{prelude::*, BufReader};
+use std::fs::{File, OpenOptions};
+use std::io::{prelude::*, BufReader, BufWriter, Write};
 use std::collections::HashSet;
 use glob::glob;
 
@@ -15,6 +12,7 @@ const FILE_NAME: &str = "brackets";
 const WINNING_BRACKET_FILE_NAME: &str = "winning_bracket.txt";
 const BINARY_BYTE_OFFSET: u8 = 32;
 const BRACKET_RESOLUTION: usize = 1_000_000; // minimum number (and step) of brackets
+const FILE_READ_WRITE_BUFFER_SIZE: usize = 8_388_608; // 8MB
 
 
 fn get_round_winners(teams: &Vec<u8>, rng: &mut rand::prelude::ThreadRng) -> Vec<u8> {
@@ -122,7 +120,7 @@ fn generate_brackets(num_of_brackets: usize) {
         .append(true)
         .open(format!("{}_{}.bin", file_number, FILE_NAME))
         .unwrap();
-    let mut writer: BufWriter<File> = BufWriter::new(f);
+    let mut writer: BufWriter<File> = BufWriter::with_capacity(FILE_READ_WRITE_BUFFER_SIZE, f);
 
     while i < num_of_brackets {
         let mut bracket: [u8; 63] = [0; 63];
@@ -156,7 +154,7 @@ fn generate_brackets(num_of_brackets: usize) {
                     .append(true)
                     .open(format!("{}_{}.bin", file_number, FILE_NAME))
                     .unwrap();
-                writer = BufWriter::new(f);
+                writer = BufWriter::with_capacity(FILE_READ_WRITE_BUFFER_SIZE, f);
             }
         }
     }
@@ -239,13 +237,14 @@ fn score_brackets() {
     }
 
     let mut top_brackets: Vec<(u8, usize, String, [u8; 63])> = Vec::with_capacity(11);
+    let mut score_distribution: [usize; 193] = [0; 193];
     for entry in glob("*_brackets*.txt").unwrap()
                                                 .chain(glob("*_brackets*.bin").unwrap()) {
 
         let scoring_bracket_filename: String = entry.unwrap().into_os_string().into_string().unwrap();
 
         let file: File = File::open(&scoring_bracket_filename).unwrap();
-        let reader: BufReader<File> = BufReader::new(file);
+        let reader: BufReader<File> = BufReader::with_capacity(FILE_READ_WRITE_BUFFER_SIZE, file);
 
         for (line_number, line) in reader.lines().enumerate() {
             let bracket: [u8; 63] =  if scoring_bracket_filename.trim_end().to_ascii_uppercase().ends_with(".TXT") {
@@ -263,6 +262,7 @@ fn score_brackets() {
 
             let score: u8 = score_bracket(&bracket, &winning_bracket);
             bracket_score_accumulator = bracket_score_accumulator.saturating_add(score as usize);
+            score_distribution[score as usize] += 1;
 
             // track number of perfect brackets
             perfect_brackets += if score == max_bracket_score { 1 } else { 0 };
@@ -276,7 +276,7 @@ fn score_brackets() {
                 // if the length is longer than 10, remove the last one as it's not top 10
                 if top_brackets.len() > 10 {
                     top_brackets.remove(10);
-                } 
+                }
             }
         }
     }
@@ -291,6 +291,21 @@ fn score_brackets() {
     println!("Total brackets: {}", total_brackets);
     println!("Perfect brackets: {} ({:.2}%)", perfect_brackets, percent_perfect_brackets);
     println!("Average bracket score: {:.1}\n", average_bracket_score);
+
+    for i in (top_brackets[0].0.saturating_sub(3)..=top_brackets[0].0).rev() {
+        println!("Brackets with {} points: {}", i, score_distribution[i as usize]);
+    }
+    println!();
+
+    let mut lowest_score: usize = usize::MAX;
+    let mut lowest_score_population: usize = 0;
+    for (score, population) in score_distribution.into_iter().enumerate() {
+        if score < lowest_score  && population > 0{
+            lowest_score = score;
+            lowest_score_population = population;
+        }
+    }
+    println!("Brackets with {} points (lowest scoring bracket): {}\n", lowest_score, lowest_score_population);
 
     for (place, bracket_stats) in top_brackets.iter().enumerate() {
         println!("place: {:<2}   score: {:<3}   line_number: {:<12}   file: {:<16}", place+1, bracket_stats.0, bracket_stats.1+1, bracket_stats.2);
