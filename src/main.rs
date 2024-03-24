@@ -12,7 +12,7 @@ const FILE_NAME: &str = "brackets";
 const WINNING_BRACKET_FILE_NAME: &str = "winning_bracket.txt";
 const BINARY_BYTE_OFFSET: u8 = 32;
 const BRACKET_RESOLUTION: usize = 1_000_000; // minimum number (and step) of brackets
-const FILE_READ_WRITE_BUFFER_SIZE: usize = 8_388_608; // 8MB
+const FILE_READ_WRITE_BUFFER_SIZE: usize = 20_971_520; // 20 MB
 
 
 fn get_round_winners(teams: &Vec<u8>, rng: &mut rand::prelude::ThreadRng) -> Vec<u8> {
@@ -227,7 +227,6 @@ fn score_brackets() {
     let mut total_brackets: usize = 0;
     let mut perfect_brackets: usize = 0;
     let mut bracket_score_accumulator: usize = 0;
-    
 
     { // Find the winning bracket text file
         let winning_bracket_file_contents: String = fs::read_to_string(WINNING_BRACKET_FILE_NAME).expect("Should have been able to read winning_bracket.txt");
@@ -248,7 +247,7 @@ fn score_brackets() {
 
         for (line_number, line) in reader.lines().enumerate() {
             let bracket: [u8; 63] =  if scoring_bracket_filename.trim_end().to_ascii_uppercase().ends_with(".TXT") {
-                // legacy format
+                // legacy text format
                 parse_bracket(&line.unwrap_or("".to_string()))
             } else {
                 // binary encoded format
@@ -284,28 +283,43 @@ fn score_brackets() {
     let percent_perfect_brackets: f64 = if total_brackets > 0 {
         (perfect_brackets as f64 / total_brackets as f64) * 100 as f64
     } else { 0 as f64 };
+
     let average_bracket_score: f64 = if total_brackets > 0 {
         bracket_score_accumulator as f64 / total_brackets as f64
     } else { 0 as f64 };
 
-    println!("Total brackets: {}", total_brackets);
-    println!("Perfect brackets: {} ({:.2}%)", perfect_brackets, percent_perfect_brackets);
-    println!("Average bracket score: {:.1}\n", average_bracket_score);
-
-    for i in (top_brackets[0].0.saturating_sub(3)..=top_brackets[0].0).rev() {
-        println!("Brackets with {} points: {}", i, score_distribution[i as usize]);
-    }
-    println!();
-
+    // track populations of each score
     let mut lowest_score: usize = usize::MAX;
-    let mut lowest_score_population: usize = 0;
+    let mut highest_population: usize = 0;
+    let mut highest_population_score: usize = 0;
     for (score, population) in score_distribution.into_iter().enumerate() {
         if score < lowest_score  && population > 0{
             lowest_score = score;
-            lowest_score_population = population;
+        }
+
+        if population > highest_population {
+            highest_population = population;
+            highest_population_score = score;
         }
     }
-    println!("Brackets with {} points (lowest scoring bracket): {}\n", lowest_score, lowest_score_population);
+
+    let highest_population_percent: f64 = if total_brackets > 0 {
+        (highest_population as f64 / total_brackets as f64) * 100 as f64
+    } else { 0 as f64 };
+
+    println!("Total brackets: {}", total_brackets);
+    println!("Perfect brackets: {} ({:.2}%)", perfect_brackets, percent_perfect_brackets);
+    println!("Average bracket score: {:.1}", average_bracket_score);
+    println!("Most common bracket score: {} ({} brackets or {:.1}%)\n", highest_population_score, highest_population, highest_population_percent);
+
+    for i in (top_brackets[0].0.saturating_sub(2)..=top_brackets[0].0).rev() {
+        println!("Brackets with {:3} points: {}", i, score_distribution[i as usize]);
+    }
+
+    for i in (lowest_score..=lowest_score.saturating_add(2)).rev() {
+        println!("Brackets with {:3} points: {}", i, score_distribution[i]);
+    }
+    println!();
 
     for (place, bracket_stats) in top_brackets.iter().enumerate() {
         println!("place: {:<2}   score: {:<3}   line_number: {:<12}   file: {:<16}", place+1, bracket_stats.0, bracket_stats.1+1, bracket_stats.2);
