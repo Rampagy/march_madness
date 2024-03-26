@@ -5,6 +5,7 @@ use std::fs::{File, OpenOptions};
 use std::io::{prelude::*, BufReader, BufWriter, Write};
 use std::collections::HashSet;
 use glob::glob;
+use rand_distr::{Normal, Distribution};
 
 
 const CREATE_NEW_FILE_BRACKET_THRESHOLD: usize = 20_000_000; // after so many brackets start a new file
@@ -14,31 +15,65 @@ const BINARY_BYTE_OFFSET: u8 = 32;
 const BRACKET_RESOLUTION: usize = 1_000_000; // minimum number (and step) of brackets
 const FILE_READ_WRITE_BUFFER_SIZE: usize = 20_971_520; // 20 MB
 
+#[derive(PartialEq)] #[repr(u8)]
+enum ProbabilityMethod {
+    Year2024 = 0,
+    Year2025 = 1,
+}
 
-fn get_round_winners(teams: &Vec<u8>, rng: &mut rand::prelude::ThreadRng) -> Vec<u8> {
+
+fn get_round_winners(teams: &Vec<u8>, rng: &mut rand::prelude::ThreadRng, method: &ProbabilityMethod) -> Vec<u8> {
     let mut winning_teams: Vec<u8> = Vec::with_capacity(teams.len() / 2);
+    let mut distributions: [Normal<f64>; 16] = [Normal::new(0.0, 1.0).unwrap(); 16];
+
+    if *method == ProbabilityMethod::Year2025 {
+        let mut mean: f64 = 85.0;
+        for i in 0..16 as usize {
+            distributions[i] = Normal::new(mean, 10.0).unwrap();
+            mean -= 2.0;
+        }
+    }
 
     for i in (0..teams.len()).step_by(2) {
-        let mut left_seed: f32 = (teams[i] % 16) as f32;
-        let mut right_seed: f32 = (teams[i+1] % 16) as f32;
+        let mut left_seed: usize = (teams[i] % 16) as usize;
+        let mut right_seed: usize = (teams[i+1] % 16) as usize;
 
-        if left_seed == 0.0 {
-            left_seed = 16.0;
+        if left_seed == 0 {
+            left_seed = 16;
         }
 
-        if right_seed == 0.0 {
-            right_seed = 16.0;
+        if right_seed == 0 {
+            right_seed = 16;
         }
 
-        let prob_left_seed_wins: f32 = right_seed / (right_seed + left_seed);
+        match method {
+            ProbabilityMethod::Year2024 => {
+                let prob_left_seed_wins: f32 = right_seed as f32 / (right_seed as f32 + left_seed as f32);
 
-        // sample the population given the above weight/probability
-        let rand_num: u32 = rng.gen::<u32>();
-        if (rand_num as f32) > (prob_left_seed_wins * (u32::MAX as f32)) {
-            let _ = winning_teams.push(teams[i+1]);
-        } else {
-            let _ = winning_teams.push(teams[i]);
+                // sample the population given the above weight/probability
+                let rand_num: u32 = rng.gen::<u32>();
+                if (rand_num as f32) > (prob_left_seed_wins * (u32::MAX as f32)) {
+                    // right seed wins
+                    let _ = winning_teams.push(teams[i+1]);
+                } else {
+                    // left seed wins
+                    let _ = winning_teams.push(teams[i]);
+                }
+            },
+            ProbabilityMethod::Year2025 => {
+                let left_seed_points: f64 = distributions[left_seed-1].sample(rng);
+                let right_seed_points: f64 = distributions[right_seed-1].sample(rng);
+
+                if left_seed_points > right_seed_points {
+                    // left seed scored more points in the game
+                    winning_teams.push(teams[i]);
+                } else {
+                    // right seed scored more points in the game
+                    winning_teams.push(teams[i+1]);
+                }
+            },
         }
+
     }
 
     return winning_teams;
@@ -67,7 +102,7 @@ fn get_human_readable_bracket(bracket: &[u8; 63]) -> String {
 }
 
 
-fn generate_bracket(bracket: &mut [u8; 63]) {
+fn generate_bracket(bracket: &mut [u8; 63], method: &ProbabilityMethod) {
     // initialize the starting bracket
     let mut teams: Vec<u8> = vec![
         1,  16,  8,  9,  5, 12,  4, 13,  6, 11,  3, 14,  7, 10,  2, 15, // east
@@ -79,7 +114,7 @@ fn generate_bracket(bracket: &mut [u8; 63]) {
     let mut rng: rand::prelude::ThreadRng = rand::thread_rng();
     let mut index: usize = 0;
     while (&teams).len() > 1 {
-        teams = get_round_winners(&teams, &mut rng);
+        teams = get_round_winners(&teams, &mut rng, &method);
 
         for team in &teams {
             bracket[index] = *team;
@@ -106,7 +141,7 @@ fn decode_bytes(bracket: &[u8; 63]) -> [u8; 63] {
 }
 
 
-fn generate_brackets(num_of_brackets: usize) {
+fn generate_brackets(num_of_brackets: usize, method: &ProbabilityMethod) {
     let mut unique_brackets: HashSet<[u8; 63]> = HashSet::with_capacity(num_of_brackets);
     let mut i: usize = 0;
     let mut repeated_brackets: usize = 0;
@@ -124,7 +159,7 @@ fn generate_brackets(num_of_brackets: usize) {
 
     while i < num_of_brackets {
         let mut bracket: [u8; 63] = [0; 63];
-        generate_bracket(&mut bracket);
+        generate_bracket(&mut bracket, &method);
 
         // only write to the file if it's a unique bracket (inserted into unique_brackets)
         if unique_brackets.insert(bracket) {
@@ -332,18 +367,20 @@ fn main() {
     let args: Vec<String> = env::args().collect();
 
     if args.len() > 1 {
-        if args.len() == 3 {
-            if args[1].trim().to_uppercase() == "--GENERATE" {
-                // number is entered in millions (2 is interpreted as 2_000_000)
-                let num_brackets: usize = args[2].trim().parse::<usize>().unwrap_or(0) * BRACKET_RESOLUTION;
+        if (args.len() == 3 || args.len() == 4) && args[1].trim().to_uppercase() == "--GENERATE" {
+            // number is entered in millions (2 is interpreted as 2_000_000)
+            let num_brackets: usize = args[2].trim().parse::<usize>().unwrap_or(0) * BRACKET_RESOLUTION;
+            let method: ProbabilityMethod = if args.len() == 4 {
+                if args[3].trim().parse::<u8>().unwrap_or(0) == 0 {
+                    // only use legacy method if explicitly stated
+                    ProbabilityMethod::Year2024
+                } else { ProbabilityMethod::Year2025 }
+            } else { ProbabilityMethod::Year2025 };
 
-                if num_brackets > 0 {
-                    generate_brackets(num_brackets);
-                } else {
-                    println!("Invalid number of brackets to generate: {}", args[2]);
-                }
+            if num_brackets > 0 {
+                generate_brackets(num_brackets, &method);
             } else {
-                println!("Unrecognized arguments: {} {}", args[1], args[2]);
+                println!("Invalid number of brackets to generate: {}", args[2]);
             }
         } else if args.len() == 2 {
             if args[1].trim().to_uppercase() == "--SCORE" {

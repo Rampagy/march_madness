@@ -55,3 +55,16 @@ round 6 winners:                                           17
 ```
 
 Using the 2024 bracket keys for this example `North Carolina` and `Purdue` played in the championship game and `North Carolina` won.
+
+## Methods
+
+
+Can choose between different methods:
+
+### Legacy method (0)
+
+probability right seed wins = left seed / (left seed + right seed)
+
+### New method (1)
+
+Samples a normal distribution to determine the score of each team and the team with the higher score wins the game.  Distributions are weighted based on seed.
