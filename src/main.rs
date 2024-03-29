@@ -328,7 +328,7 @@ fn score_brackets() {
     let mut highest_population: usize = 0;
     let mut highest_population_score: usize = 0;
     for (score, population) in score_distribution.into_iter().enumerate() {
-        if score < lowest_score  && population > 0{
+        if score < lowest_score  && population > 0 {
             lowest_score = score;
         }
 
@@ -344,6 +344,7 @@ fn score_brackets() {
 
     println!("Total brackets: {}", total_brackets);
     println!("Perfect brackets: {} ({:.2}%)", perfect_brackets, percent_perfect_brackets);
+    println!("Max Bracket score: {}", max_bracket_score);
     println!("Average bracket score: {:.1}", average_bracket_score);
     println!("Most common bracket score: {} ({} brackets or {:.1}%)\n", highest_population_score, highest_population, highest_population_percent);
 
