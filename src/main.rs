@@ -256,7 +256,59 @@ fn calc_max_bracket_points(winning_bracket: &[u8; 63]) -> u8 {
 }
 
 
-fn score_brackets() {
+fn print_results<'a, 'b>(perfect_brackets: usize, total_brackets: usize, bracket_score_accumulator: usize, max_bracket_score: u8, 
+                         score_distribution: &'a [usize; 193], top_brackets: &'b Vec<(u8, usize, String, [u8; 63])>) {
+
+    let percent_perfect_brackets: f64 = if total_brackets > 0 {
+        (perfect_brackets as f64 / total_brackets as f64) * 100 as f64
+    } else { 0 as f64 };
+
+    let average_bracket_score: f64 = if total_brackets > 0 {
+        bracket_score_accumulator as f64 / total_brackets as f64
+    } else { 0 as f64 };
+
+    // track populations of each score
+    let mut lowest_score: usize = usize::MAX;
+    let mut highest_population: usize = 0;
+    let mut highest_population_score: usize = 0;
+    for (score, population) in score_distribution.into_iter().enumerate() {
+        if score < lowest_score  && *population > 0 {
+            lowest_score = score;
+        }
+
+        if *population > highest_population {
+            highest_population = *population;
+            highest_population_score = score;
+        }
+    }
+
+    let highest_population_percent: f64 = if total_brackets > 0 {
+        (highest_population as f64 / total_brackets as f64) * 100 as f64
+    } else { 0 as f64 };
+
+    println!("Total brackets: {}", total_brackets);
+    println!("Perfect brackets: {} ({:.2}%)", perfect_brackets, percent_perfect_brackets);
+    println!("Max Bracket score: {}", max_bracket_score);
+    println!("Average bracket score: {:.1}", average_bracket_score);
+    println!("Most common bracket score: {} ({} brackets or {:.1}%)\n", highest_population_score, highest_population, highest_population_percent);
+
+    for i in (top_brackets[0].0.saturating_sub(2)..=top_brackets[0].0).rev() {
+        println!("Brackets with {:3} points: {}", i, score_distribution[i as usize]);
+    }
+
+    for i in (lowest_score..=lowest_score.saturating_add(2)).rev() {
+        println!("Brackets with {:3} points: {}", i, score_distribution[i]);
+    }
+    println!();
+
+    for (place, bracket_stats) in top_brackets.iter().enumerate() {
+        println!("place: {:<2}   score: {:<3}   line_number: {:<12}   file: {:<16}", place+1, bracket_stats.0, bracket_stats.1+1, bracket_stats.2);
+        println!("bracket: {}\n",  get_human_readable_bracket(&bracket_stats.3));
+    }
+}
+
+
+fn score_brackets(score_individually: bool) {
     let winning_bracket: [u8; 63];
     let max_bracket_score: u8;
     let mut total_brackets: usize = 0;
@@ -313,53 +365,24 @@ fn score_brackets() {
                 }
             }
         }
-    }
 
-    let percent_perfect_brackets: f64 = if total_brackets > 0 {
-        (perfect_brackets as f64 / total_brackets as f64) * 100 as f64
-    } else { 0 as f64 };
+        if score_individually {
+            // print individual for each file
+            print_results(perfect_brackets, total_brackets, bracket_score_accumulator, max_bracket_score, &score_distribution, &top_brackets);
 
-    let average_bracket_score: f64 = if total_brackets > 0 {
-        bracket_score_accumulator as f64 / total_brackets as f64
-    } else { 0 as f64 };
-
-    // track populations of each score
-    let mut lowest_score: usize = usize::MAX;
-    let mut highest_population: usize = 0;
-    let mut highest_population_score: usize = 0;
-    for (score, population) in score_distribution.into_iter().enumerate() {
-        if score < lowest_score  && population > 0 {
-            lowest_score = score;
-        }
-
-        if population > highest_population {
-            highest_population = population;
-            highest_population_score = score;
+            perfect_brackets = 0;
+            total_brackets = 0;
+            bracket_score_accumulator = 0;
+            top_brackets.clear();
+            for i in 0..score_distribution.len() {
+                score_distribution[i] = 0;
+            }
         }
     }
 
-    let highest_population_percent: f64 = if total_brackets > 0 {
-        (highest_population as f64 / total_brackets as f64) * 100 as f64
-    } else { 0 as f64 };
-
-    println!("Total brackets: {}", total_brackets);
-    println!("Perfect brackets: {} ({:.2}%)", perfect_brackets, percent_perfect_brackets);
-    println!("Max Bracket score: {}", max_bracket_score);
-    println!("Average bracket score: {:.1}", average_bracket_score);
-    println!("Most common bracket score: {} ({} brackets or {:.1}%)\n", highest_population_score, highest_population, highest_population_percent);
-
-    for i in (top_brackets[0].0.saturating_sub(2)..=top_brackets[0].0).rev() {
-        println!("Brackets with {:3} points: {}", i, score_distribution[i as usize]);
-    }
-
-    for i in (lowest_score..=lowest_score.saturating_add(2)).rev() {
-        println!("Brackets with {:3} points: {}", i, score_distribution[i]);
-    }
-    println!();
-
-    for (place, bracket_stats) in top_brackets.iter().enumerate() {
-        println!("place: {:<2}   score: {:<3}   line_number: {:<12}   file: {:<16}", place+1, bracket_stats.0, bracket_stats.1+1, bracket_stats.2);
-        println!("bracket: {}\n",  get_human_readable_bracket(&bracket_stats.3));
+    if !score_individually {
+        // print results for all files
+        print_results(perfect_brackets, total_brackets, bracket_score_accumulator, max_bracket_score, &score_distribution, &top_brackets);
     }
 }
 
@@ -383,14 +406,14 @@ fn main() {
             } else {
                 println!("Invalid number of brackets to generate: {}", args[2]);
             }
-        } else if args.len() == 2 {
-            if args[1].trim().to_uppercase() == "--SCORE" {
-                score_brackets();
-            } else {
-                println!("Unrecognized argument: {}", args[1]);
-            }
+        } else if (args.len() == 2 || args.len() == 3) && args[1].trim().to_uppercase() == "--SCORE" {
+            let score_individually: bool = if args.len() == 3 && args[2].trim().to_uppercase() == "--INDIVIDUAL" {
+                true
+            } else { false };
+
+            score_brackets(score_individually);
         } else {
-            println!("Too many arguments!");
+            println!("Improper arguments!");
         }
     } else {
         // not enough arguments, do nothing
