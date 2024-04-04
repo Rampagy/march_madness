@@ -258,6 +258,8 @@ fn calc_max_bracket_points(winning_bracket: &[u8; 63]) -> u8 {
 
 fn print_results<'a, 'b>(perfect_brackets: usize, total_brackets: usize, bracket_score_accumulator: usize, max_bracket_score: u8, 
                          score_distribution: &'a [usize; 193], top_brackets: &'b Vec<(u8, usize, String, [u8; 63])>) {
+    const TOP_NUM_BRACKETS_TO_SHOW: u8 = 3;
+    const BOT_NUM_BRACKETS_TO_SHOW: usize = 3;
 
     let percent_perfect_brackets: f64 = if total_brackets > 0 {
         (perfect_brackets as f64 / total_brackets as f64) * 100 as f64
@@ -292,11 +294,11 @@ fn print_results<'a, 'b>(perfect_brackets: usize, total_brackets: usize, bracket
     println!("Average bracket score: {:.1}", average_bracket_score);
     println!("Most common bracket score: {} ({} brackets or {:.1}%)\n", highest_population_score, highest_population, highest_population_percent);
 
-    for i in (top_brackets[0].0.saturating_sub(2)..=top_brackets[0].0).rev() {
+    for i in (top_brackets[0].0.saturating_sub(TOP_NUM_BRACKETS_TO_SHOW-1)..=top_brackets[0].0).rev() {
         println!("Brackets with {:3} points: {}", i, score_distribution[i as usize]);
     }
 
-    for i in (lowest_score..=lowest_score.saturating_add(2)).rev() {
+    for i in (lowest_score..=lowest_score.saturating_add(BOT_NUM_BRACKETS_TO_SHOW-1)).rev() {
         println!("Brackets with {:3} points: {}", i, score_distribution[i]);
     }
     println!();
