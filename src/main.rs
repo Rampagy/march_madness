@@ -4,6 +4,7 @@ use std::fs;
 use std::fs::{File, OpenOptions};
 use std::io::{prelude::*, BufReader, BufWriter, Write};
 use std::collections::HashSet;
+use std::ops::Div;
 use glob::glob;
 use rand_distr::{Normal, Distribution};
 
@@ -30,7 +31,7 @@ fn get_round_winners(teams: &Vec<u8>, rng: &mut rand::prelude::ThreadRng, method
         let mut mean: f64 = 85.0;
         for i in 0..16 as usize {
             distributions[i] = Normal::new(mean, 10.0).unwrap();
-            mean -= 2.0;
+            mean -= 1.0;
         }
     }
 
@@ -166,7 +167,7 @@ fn generate_brackets(num_of_brackets: usize, method: &ProbabilityMethod) {
             let _ = writer.write(&encode_to_bytes(&bracket));
 
             if (i+1) % 1_000_000 == 0 {
-                println!("{}", i);
+                println!("{}", 1+i.div(1_000_000));
                 println!("repeated brackets: {}", repeated_brackets);
             }
 
