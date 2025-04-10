@@ -12,9 +12,15 @@ use rand_distr::{Normal, Distribution};
 const CREATE_NEW_FILE_BRACKET_THRESHOLD: usize = 20_000_000; // after so many brackets start a new file
 const FILE_NAME: &str = "brackets";
 const WINNING_BRACKET_FILE_NAME: &str = "winning_bracket.txt";
-const BINARY_BYTE_OFFSET: u8 = 32;
 const BRACKET_RESOLUTION: usize = 1_000_000; // minimum number (and step) of brackets
 const FILE_READ_WRITE_BUFFER_SIZE: usize = 20_971_520; // 20 MB
+const STARTING_BRACKET: [u8; 64] = [
+    1,  16,  8,  9,  5, 12,  4, 13,  6, 11,  3, 14,  7, 10,  2, 15, // east
+    17, 32, 24, 25, 21, 28, 20, 29, 22, 27, 19, 30, 23, 26, 18, 31, // west
+    33, 48, 40, 41, 37, 44, 36, 45, 38, 43, 35, 46, 39, 42, 34, 47, // south
+    49, 64, 56, 57, 53, 60, 52, 61, 54, 59, 51, 62, 55, 58, 50, 63, // midwest
+];
+
 
 #[derive(PartialEq)] #[repr(u8)]
 enum ProbabilityMethod {
@@ -74,7 +80,6 @@ fn get_round_winners(teams: &Vec<u8>, rng: &mut rand::prelude::ThreadRng, method
                 }
             },
         }
-
     }
 
     return winning_teams;
@@ -125,20 +130,34 @@ fn generate_bracket(bracket: &mut [u8; 63], method: &ProbabilityMethod) {
 }
 
 
-fn encode_to_bytes(bracket: &[u8; 63]) -> [u8; 64] {
-    let mut encoded_bracket: [u8; 64] = [0; 64];
+fn encode_to_bytes(bracket: &[u8; 63]) -> [u8; 8] {
+    let mut encoded_bracket: u64 = 0;
 
-    for (idx, team) in bracket.into_iter().enumerate() {
-        encoded_bracket[idx] = team + BINARY_BYTE_OFFSET;
+    for (idx, top_team) in bracket.into_iter().enumerate() {
+        // 0 bit if first (top) team won, 1 bit if second (bottom) team won
+        let encoded_bit: u8 = 
+            if idx < 32 { // first  round
+                // compare the round 1 winning team to the top position in the bracket
+                // if the team that won is not the top team encode a 1 bit because the second (bottom) team won
+                (STARTING_BRACKET[idx*2] != *top_team) as u8 
+            } else { // the rest of the rounds
+                // compare the rounds winning team to the top position in the bracket
+                // if the team that won is not the top team encode a 1 bit because the second (bottom) team won
+                (bracket[2*(idx-32)] != *top_team) as u8
+            };
+
+        // add the bit to the bracket
+        encoded_bracket = (encoded_bracket << 1) | (1 * encoded_bit) as u64;
     }
 
-    encoded_bracket[63] = b'\n';
-    return encoded_bracket;
+    // left justify the 63 bits
+    return (encoded_bracket << 1).to_be_bytes();
 }
 
 
 fn decode_bytes(bracket: &[u8; 63]) -> [u8; 63] {
-    return bracket.map(|x| x-BINARY_BYTE_OFFSET);
+     // TODO: fix for new binary format
+    return bracket.map(|x| x);
 }
 
 
@@ -448,5 +467,22 @@ mod tests {
 
         assert_eq!(score_bracket(&winning_bracket_encoded, &winning_bracket_encoded), 192);
         assert_eq!(score_bracket(&winning_bracket_encoded, &test_bracket_encoded), 129);
+    }
+
+    #[test]
+    fn test_encode_bracket() {
+        let test_bracket: [u8; 63] = [ // expanded for clarity
+            1, 8, 5, 4, 11, 14, 7, 2, 17, 24, 28, 29, 22, 19, 23, 18, 33, 41, 44, 45, 38, 35, 42, 34, 49, 57, 53, 52, 59, 51, 55, 50, 
+              1,    5,    11,     7,     17,    29,     19,     18,     33,      44,    38,     34,      49,     52,    51,     50, 
+                 1,            7,           17,             18,              33,             34,             49,             50, 
+                        1,                           17,                             33,                            49, 
+                                     17,                                                            33, 
+                                                                     33
+        ];
+
+        let test_bracket_encoded: [u8; 8] = encode_to_bytes(&test_bracket);
+
+        let answer: [u8; 8] = [12, 48, 114, 72, 7, 23, 85, 10];
+        assert!(test_bracket_encoded.iter().eq(answer.iter()));
     }
 }
