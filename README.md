@@ -26,7 +26,7 @@ The bracket used for scoring the other brackets (winning_bracket.txt) will use t
 
 ### BIN (binary file)
 
-A [binary file](https://en.wikipedia.org/wiki/Binary_file) is the new format used by this tool to save disk space and speed up the reading and writing of files.  Instead of writing the team key into the file as ascii, it writes an encoded byte for each team.  The byte is encoded by taking the team number (same number as the text file) adding an offset of 32 and then writing that byte to the file.  This format also excludes the semi-colon as a round delimiter.
+A [binary file](https://en.wikipedia.org/wiki/Binary_file) is a previous format used by this tool to save disk space and speed up the reading and writing of files.  Instead of writing the team key into the file as ascii, it writes an encoded byte for each team.  The byte is encoded by taking the team number (same number as the text file) adding an offset of 32 and then writing that byte to the file.  This format also excludes the semi-colon as a round delimiter.
 
 Looking at the below example (only the final 3 rounds are shown for simplicity)
 
@@ -35,12 +35,26 @@ text file bracket: 5 17 34 49;17 49;17
 binary file bracket: %1BQ1Q1
 ```
 
+### BIN (binary file version 2)
+
+An improved [binary file](https://en.wikipedia.org/wiki/Binary_file) is the current format used by this tool to save disk space and speed up the reading and writing of files.  Instead of writing the team key as an encoded byte for each team this format only saves who won each game as a bit in a 64 bit word.  A zero bit indicates that the first team in the match up won, while a one bit indicates the second team in the match up won.  The bits are packed from left to right meaning that the 1 vs 16 seed matchup in the east division will always be represented by the most significant bit of the 64 bit word.
+
+Looking at the below example (only the final 3 rounds are shown for simplicity)
+
+```
+text file bracket: 5 17 34 49;17 49;17
+binary file (version 1) bracket: %1BQ1Q1
+binary file (version 2) bracket: 0b110
+```
+
 ## Example
 
 Here is an example bracket (one line inside of a txt file):
 
 ```
-1 9 5 13 6 3 10 2 17 25 21 20 22 19 26 18 33 40 37 36 38 35 42 34 49 57 53 61 54 51 55 50;1 5 6 10 17 20 19 18 40 37 35 34 49 61 51 50;5 6 17 19 40 34 49 50;5 17 34 49;17 49;17
+binary file (version 2) format: TODO
+binary file (version 1) format: TODO
+text file format: 1 9 5 13 6 3 10 2 17 25 21 20 22 19 26 18 33 40 37 36 38 35 42 34 49 57 53 61 54 51 55 50;1 5 6 10 17 20 19 18 40 37 35 34 49 61 51 50;5 6 17 19 40 34 49 50;5 17 34 49;17 49;17
 ```
 
 Can be expanded to:
