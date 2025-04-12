@@ -4,10 +4,10 @@ A tool used to produce a large number of [march madness](https://en.wikipedia.or
 
 ## Scoring
 
-This tool uses the same scoring system as Yahoo. CBS, FoxSports, and NCAA.com.  Thus a perfect bracket woudl get a score of 192 points.
+This tool uses the same scoring system as Yahoo. CBS, FoxSports, and NCAA.com.  Thus a perfect bracket would get a score of 192 points.
 
-|**RND 1**|**RND 2**|**RND 3**|**RND 4**|**RND 5**|**RND 6**
-:--------:|:-------:|:-------:|:-------:|:-------:|:-------:
+|**COMPANY**|**RND 1**|**RND 2**|**RND 3**|**RND 4**|**RND 5**|**RND 6**
+:----------:|:-------:|:-------:|:-------:|:-------:|:-------:|:-------:
 ESPN|10|20|40|80|160|320
 Yahoo|1|2|4|8|16|32
 CBS|1|2|4|8|16|32
@@ -16,7 +16,7 @@ NCAA.com|1|2|4|8|16|32
 
 ## Formats
 
-This tool supports scoring both text (txt) and binary (bin) formats for scoring.  It now only generates the brackets using the newer binary format.
+This tool only supports scoring version 2 binary (bin) files.  It also only generates the brackets using the version 2 binary (bin) format.
 
 The bracket used for scoring the other brackets (winning_bracket.txt) will use the text file format (for ease of editing and reading).
 
@@ -24,7 +24,9 @@ The bracket used for scoring the other brackets (winning_bracket.txt) will use t
 
 [TXT](https://en.wikipedia.org/wiki/Text_file) is the original (legacy format) that directly listed the team key as [ascii](https://www.asciitable.com/) into the file.  This consumes a significant amount of disk space when generating millions of brackets.
 
-### BIN (binary file)
+This file format was used for the 2024 competition.
+
+### BIN (binary file version 1)
 
 A [binary file](https://en.wikipedia.org/wiki/Binary_file) is a previous format used by this tool to save disk space and speed up the reading and writing of files.  Instead of writing the team key into the file as ascii, it writes an encoded byte for each team.  The byte is encoded by taking the team number (same number as the text file) adding an offset of 32 and then writing that byte to the file.  This format also excludes the semi-colon as a round delimiter.
 
@@ -34,6 +36,8 @@ Looking at the below example (only the final 3 rounds are shown for simplicity)
 text file bracket: 5 17 34 49;17 49;17
 binary file bracket: %1BQ1Q1
 ```
+
+This file format was used for the 2025 competition.
 
 ### BIN (binary file version 2)
 
@@ -47,9 +51,11 @@ binary file (version 1) bracket: %1BQ1Q1
 binary file (version 2) bracket: 0b110
 ```
 
+This file format was used for the 2026 competition.
+
 ## Example
 
-Here is an example bracket (one line inside of a txt file):
+Here is an example bracket in each format:
 
 ```
 *binary file (version 2) format: 0x52 0x42 0x02 0x50 0x07 0xB7 0x85 0x2C
@@ -60,11 +66,11 @@ text file format: 1 9 5 13 6 3 10 2 17 25 21 20 22 19 26 18 33 40 37 36 38 35 42
 Which can be expanded to:
 
 ```
-round 1 winners: 1 9 5 13 6 3 10 2 17 25 21 20 22 19 26 18 33 40 37 36 38 35 42 34 49 57 53 61 54 51 55 50
-round 2 winners:  1   5    6   10    17    20    19    18   40    37     35    34   49     61    51   50
-round 3 winners:    5        6          17           19        40           34         49          50
-round 4 winners:        5                     17                     34                      49
-round 5 winners:                   17                                            49
+round 1 winners: 1 9 5 13 6 3 10 2 17 25 21 20 22 19 26 18 33 40 37 36 38 35 42 34 49 57 53 61 54 51 55 50;
+round 2 winners:  1   5    6   10    17    20    19    18   40    37     35    34   49     61    51   50;
+round 3 winners:    5        6          17           19        40           34         49          50;
+round 4 winners:        5                     17                     34                      49;
+round 5 winners:                   17                                            49;
 round 6 winners:                                           17
 ```
 
