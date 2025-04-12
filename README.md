@@ -4,7 +4,7 @@ A tool used to produce a large number of [march madness](https://en.wikipedia.or
 
 ## Scoring
 
-This tool uses the same scoring system as Yahoo. CBS, FoxSports, and NCAA.com.  Thus a perfect bracket would get a score of 192 points.
+This tool uses the same scoring system as Yahoo, CBS, FoxSports, and NCAA.com.  Thus a perfect bracket would get a score of 192 points.
 
 |**COMPANY**|**RND 1**|**RND 2**|**RND 3**|**RND 4**|**RND 5**|**RND 6**
 :----------:|:-------:|:-------:|:-------:|:-------:|:-------:|:-------:
