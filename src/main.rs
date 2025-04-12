@@ -58,7 +58,7 @@ fn get_round_winners(teams: &Vec<u8>, rng: &mut rand::prelude::ThreadRng, method
                 let prob_left_seed_wins: f32 = right_seed as f32 / (right_seed as f32 + left_seed as f32);
 
                 // sample the population given the above weight/probability
-                let rand_num: u32 = rng.gen::<u32>();
+                let rand_num: u32 = rng.random::<u32>();
                 if (rand_num as f32) > (prob_left_seed_wins * (u32::MAX as f32)) {
                     // right seed wins
                     let _ = winning_teams.push(teams[i+1]);
@@ -117,7 +117,7 @@ fn generate_bracket(bracket: &mut [u8; 63], method: &ProbabilityMethod) {
         49, 64, 56, 57, 53, 60, 52, 61, 54, 59, 51, 62, 55, 58, 50, 63, // midwest
     ];
 
-    let mut rng: rand::prelude::ThreadRng = rand::thread_rng();
+    let mut rng: rand::prelude::ThreadRng = rand::rng();
     let mut index: usize = 0;
     while (&teams).len() > 1 {
         teams = get_round_winners(&teams, &mut rng, &method);
@@ -486,7 +486,7 @@ mod tests {
         assert!(test_bracket_encoded.iter().eq(answer.iter()));
     }
 
-    fn encode_to_bytes1(bracket: &[u8; 63]) -> [u8; 64] {
+    fn encode_to_bytes_binary_version1(bracket: &[u8; 63]) -> [u8; 64] {
         let mut encoded_bracket: [u8; 64] = [0; 64];
     
         for (idx, team) in bracket.into_iter().enumerate() {
@@ -497,10 +497,11 @@ mod tests {
         return encoded_bracket;
     }
 
+
     #[test]
     fn test_print_example() {
         let test_bracket: [u8; 63] = [1, 9, 5, 13, 6, 3, 10, 2, 17, 25, 21, 20, 22, 19, 26, 18, 33, 40, 37, 36, 38, 35, 42, 34, 49, 57, 53, 61, 54, 51, 55, 50, 1, 5, 6, 10, 17, 20, 19, 18, 40, 37, 35, 34, 49, 61, 51, 50, 5, 6, 17, 19, 40, 34, 49, 50, 5, 17, 34, 49, 17, 49, 17];
-        let test_bracket_encoded1: [u8; 64] = encode_to_bytes1(&test_bracket);
+        let test_bracket_encoded1: [u8; 64] = encode_to_bytes_binary_version1(&test_bracket);
         let test_bracket_encoded2: [u8; 8] = encode_to_bytes(&test_bracket);
 
         for t in test_bracket {
