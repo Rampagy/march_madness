@@ -52,12 +52,12 @@ binary file (version 2) bracket: 0b110
 Here is an example bracket (one line inside of a txt file):
 
 ```
-binary file (version 2) format: TODO
-binary file (version 1) format: TODO
+*binary file (version 2) format: 0x52 0x42 0x02 0x50 0x07 0xB7 0x85 0x2C
+binary file (version 1) format: !)%-&#*"195463:2AHEDFCJBQYU]VSWR!%&*1432HECBQ]SR%&13HBQR%1BQ1Q1
 text file format: 1 9 5 13 6 3 10 2 17 25 21 20 22 19 26 18 33 40 37 36 38 35 42 34 49 57 53 61 54 51 55 50;1 5 6 10 17 20 19 18 40 37 35 34 49 61 51 50;5 6 17 19 40 34 49 50;5 17 34 49;17 49;17
 ```
 
-Can be expanded to:
+Which can be expanded to:
 
 ```
 round 1 winners: 1 9 5 13 6 3 10 2 17 25 21 20 22 19 26 18 33 40 37 36 38 35 42 34 49 57 53 61 54 51 55 50
@@ -70,8 +70,10 @@ round 6 winners:                                           17
 
 Using the 2024 bracket keys for this example `North Carolina` and `Purdue` played in the championship game and `North Carolina` won.
 
-## Methods
+*The bytes are shown in hexadecimal representation and space delimited for the sake of understanding as the ascii representation of some of the characters are not visible.  In an actual file the bytes will be written directly to the file and also not space delimited so that it only takes up 8 bytes per bracket.
 
+
+## Methods
 
 Can choose between different methods:
 
