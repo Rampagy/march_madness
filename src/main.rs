@@ -9,7 +9,7 @@ use glob::glob;
 use rand_distr::{Normal, Distribution};
 
 
-const CREATE_NEW_FILE_BRACKET_THRESHOLD: usize = 20_000_000; // after so many brackets start a new file
+const CREATE_NEW_FILE_BRACKET_THRESHOLD: usize = 120_000_000; // after so many brackets start a new file
 const FILE_NAME: &str = "brackets";
 const WINNING_BRACKET_FILE_NAME: &str = "winning_bracket.txt";
 const BRACKET_RESOLUTION: usize = 1_000_000; // minimum number (and step) of brackets
@@ -205,7 +205,7 @@ fn decode_bytes(bracket: &[u8; 8]) -> [u8; 63] {
 
 
 fn generate_brackets(num_of_brackets: usize, method: &ProbabilityMethod) {
-    let mut unique_brackets: HashSet<[u8; 63]> = HashSet::with_capacity(num_of_brackets);
+    let mut unique_brackets: HashSet<[u8; 8]> = HashSet::with_capacity(num_of_brackets);
     let mut i: usize = 0;
     let mut repeated_brackets: usize = 0;
     let mut file_number: usize = 0;
@@ -223,10 +223,11 @@ fn generate_brackets(num_of_brackets: usize, method: &ProbabilityMethod) {
     while i < num_of_brackets {
         let mut bracket: [u8; 63] = [0; 63];
         generate_bracket(&mut bracket, &method);
+        let encoded_bracket: [u8; 8] = encode_to_bytes(&bracket);
 
         // only write to the file if it's a unique bracket (inserted into unique_brackets)
-        if unique_brackets.insert(bracket) {
-            let _ = writer.write(&encode_to_bytes(&bracket));
+        if unique_brackets.insert(encoded_bracket) {
+            let _ = writer.write(&encoded_bracket);
 
             if (i+1) % 1_000_000 == 0 {
                 println!("{}", 1+i.div(1_000_000));
@@ -373,7 +374,7 @@ fn print_results<'a, 'b>(perfect_brackets: usize, total_brackets: usize, bracket
 }
 
 
-fn score_brackets(score_individually: bool) {
+fn score_brackets() {
     let winning_bracket: [u8; 63];
     let max_bracket_score: u8;
     let mut total_brackets: usize = 0;
@@ -401,13 +402,13 @@ fn score_brackets(score_individually: bool) {
         let mut bytes: usize = 0;
         while reader.read_exact(&mut temp_bytes).is_ok() {
             let bracket: [u8; 63] = decode_bytes(&temp_bytes);
-
             let score: u8 = score_bracket(&bracket, &winning_bracket);
+
             bracket_score_accumulator = bracket_score_accumulator.saturating_add(score as usize);
             score_distribution[score as usize] += 1;
 
             // track number of perfect brackets
-            perfect_brackets += if score == max_bracket_score { 1 } else { 0 };
+            perfect_brackets += (score == max_bracket_score) as usize;
             total_brackets += 1;
 
             if top_brackets.len() < 10 || score > top_brackets[top_brackets.len()-1].0 {
@@ -423,25 +424,10 @@ fn score_brackets(score_individually: bool) {
 
             bytes += 8;
         }
-
-        if score_individually {
-            // print individual for each file
-            print_results(perfect_brackets, total_brackets, bracket_score_accumulator, max_bracket_score, &score_distribution, &top_brackets);
-
-            perfect_brackets = 0;
-            total_brackets = 0;
-            bracket_score_accumulator = 0;
-            top_brackets.clear();
-            for i in 0..score_distribution.len() {
-                score_distribution[i] = 0;
-            }
-        }
     }
 
-    if !score_individually {
-        // print results for all files
-        print_results(perfect_brackets, total_brackets, bracket_score_accumulator, max_bracket_score, &score_distribution, &top_brackets);
-    }
+    // print results for all files
+    print_results(perfect_brackets, total_brackets, bracket_score_accumulator, max_bracket_score, &score_distribution, &top_brackets);
 }
 
 
@@ -464,12 +450,8 @@ fn main() {
             } else {
                 println!("Invalid number of brackets to generate: {}", args[2]);
             }
-        } else if (args.len() == 2 || args.len() == 3) && args[1].trim().to_uppercase() == "--SCORE" {
-            let score_individually: bool = if args.len() == 3 && args[2].trim().to_uppercase() == "--INDIVIDUAL" {
-                true
-            } else { false };
-
-            score_brackets(score_individually);
+        } else if args.len() == 2 && args[1].trim().to_uppercase() == "--SCORE" {
+            score_brackets();
         } else {
             println!("Improper arguments!");
         }
