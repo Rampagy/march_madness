@@ -155,9 +155,52 @@ fn encode_to_bytes(bracket: &[u8; 63]) -> [u8; 8] {
 }
 
 
-fn decode_bytes(bracket: &[u8; 63]) -> [u8; 63] {
-     // TODO: fix for new binary format
-    return bracket.map(|x| x);
+fn decode_bytes(bracket: &[u8; 8]) -> [u8; 63] {
+    let mut decoded_bracket: [u8; 63] = [0; 63];
+    let mut bit_count: usize = 0; // also game_count
+    let mut round_start: usize = 0;
+    let mut round_size: usize = 32;
+
+    for &b in bracket {
+        let mut mask: u8 = 0x80;
+        while mask > 0 {
+            if bit_count >= 63 {
+                // don't count the final bit
+                break;
+            }
+
+            if (mask & b) == 0 {
+                // first team won
+                if bit_count < 32 {
+                    // the first round needs to get the winners from the starting bracket
+                    decoded_bracket[bit_count] = STARTING_BRACKET[2*bit_count];
+                } else {
+                    // the subsequent rounds need to get the winners from the previous round winners
+                    decoded_bracket[bit_count] = decoded_bracket[2*(bit_count - 32)];
+                }
+            } else {
+                // second team won
+                if bit_count < 32 {
+                    // the first round needs to get the winners from the starting bracket
+                    decoded_bracket[bit_count] = STARTING_BRACKET[2*bit_count+1];
+                } else {
+                    // the subsequent rounds need to get the winners from the previous round winners
+                    decoded_bracket[bit_count] = decoded_bracket[2*(bit_count - 32) + 1];
+                }
+            }
+
+            mask >>= 1;
+            bit_count  += 1;
+
+            // Move to next round
+            if bit_count == round_start + round_size {
+                round_start += round_size;
+                round_size /= 2;
+            }
+        }
+    }
+
+    return decoded_bracket;
 }
 
 
@@ -365,7 +408,8 @@ fn score_brackets(score_individually: bool) {
                     if i > 63 { break; }
                     temp_bytes[i] = ch as u8;
                 }
-                decode_bytes(&temp_bytes)
+                // TODO: fix decode_bytes(&temp_bytes)
+                [0; 63] // TODO: remove
             };
 
             let score: u8 = score_bracket(&bracket, &winning_bracket);
@@ -486,6 +530,18 @@ mod tests {
         assert!(test_bracket_encoded.iter().eq(answer.iter()));
     }
 
+    #[test]
+    fn test_decode_bracket() {
+        let answer: [u8; 63] = [1, 9, 5, 13, 6, 3, 10, 2, 17, 25, 21, 20, 22, 19, 26, 18, 33, 40, 37, 
+                                36, 38, 35, 42, 34, 49, 57, 53, 61, 54, 51, 55, 50, 1, 5, 6, 10, 17, 
+                                20, 19, 18, 40, 37, 35, 34, 49, 61, 51, 50, 5, 6, 17, 19, 40, 34, 49, 
+                                50, 5, 17, 34, 49, 17, 49, 17];
+        let test_bracket: [u8; 8] = [0x52, 0x42, 0x02, 0x50, 0x07, 0xB7, 0x85, 0x2C];
+        let test_bracket_decoded: [u8; 63] = decode_bytes(&test_bracket);
+        assert!(test_bracket_decoded.iter().eq(answer.iter()));
+    }
+
+
     fn encode_to_bytes_binary_version1(bracket: &[u8; 63]) -> [u8; 64] {
         let mut encoded_bracket: [u8; 64] = [0; 64];
     
@@ -496,7 +552,6 @@ mod tests {
         encoded_bracket[63] = b'\n';
         return encoded_bracket;
     }
-
 
     #[test]
     fn test_print_example() {
