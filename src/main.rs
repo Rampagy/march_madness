@@ -367,7 +367,7 @@ fn print_results<'a, 'b>(perfect_brackets: usize, total_brackets: usize, bracket
     println!();
 
     for (place, bracket_stats) in top_brackets.iter().enumerate() {
-        println!("place: {:<2}   score: {:<3}   line_number: {:<12}   file: {:<16}", place+1, bracket_stats.0, bracket_stats.1+1, bracket_stats.2);
+        println!("place: {:<2}   score: {:<3}   starting_byte: {:<12}   file: {:<16}", place+1, bracket_stats.0, bracket_stats.1+1, bracket_stats.2);
         println!("bracket: {}\n",  get_human_readable_bracket(&bracket_stats.3));
     }
 }
@@ -395,22 +395,12 @@ fn score_brackets(score_individually: bool) {
         let scoring_bracket_filename: String = entry.unwrap().into_os_string().into_string().unwrap();
 
         let file: File = File::open(&scoring_bracket_filename).unwrap();
-        let reader: BufReader<File> = BufReader::with_capacity(FILE_READ_WRITE_BUFFER_SIZE, file);
+        let mut reader: BufReader<File> = BufReader::with_capacity(FILE_READ_WRITE_BUFFER_SIZE, file);
 
-        for (line_number, line) in reader.lines().enumerate() {
-            let bracket: [u8; 63] =  if scoring_bracket_filename.trim_end().to_ascii_uppercase().ends_with(".TXT") {
-                // legacy text format
-                parse_bracket(&line.unwrap_or("".to_string()))
-            } else {
-                // binary encoded format
-                let mut temp_bytes: [u8; 63] = [0; 63];
-                for (i, ch) in line.unwrap_or("".to_string()).chars().enumerate() {
-                    if i > 63 { break; }
-                    temp_bytes[i] = ch as u8;
-                }
-                // TODO: fix decode_bytes(&temp_bytes)
-                [0; 63] // TODO: remove
-            };
+        let mut temp_bytes: [u8; 8] = [0; 8];
+        let mut bytes: usize = 0;
+        while reader.read_exact(&mut temp_bytes).is_ok() {
+            let bracket: [u8; 63] = decode_bytes(&temp_bytes);
 
             let score: u8 = score_bracket(&bracket, &winning_bracket);
             bracket_score_accumulator = bracket_score_accumulator.saturating_add(score as usize);
@@ -421,7 +411,7 @@ fn score_brackets(score_individually: bool) {
             total_brackets += 1;
 
             if top_brackets.len() < 10 || score > top_brackets[top_brackets.len()-1].0 {
-                top_brackets.push(  (score, line_number, scoring_bracket_filename.clone(), bracket)  );
+                top_brackets.push(  (score, bytes, scoring_bracket_filename.clone(), bracket)  );
                 top_brackets.sort_by_key(|x| (*x).0);
                 top_brackets.reverse();
 
@@ -430,6 +420,8 @@ fn score_brackets(score_individually: bool) {
                     top_brackets.remove(10);
                 }
             }
+
+            bytes += 8;
         }
 
         if score_individually {
