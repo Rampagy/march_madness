@@ -155,9 +155,12 @@ fn encode_to_bytes(bracket: &[u8; 63]) -> [u8; 8] {
 }
 
 
-fn decode_bytes(bracket: &[u8; 8]) -> [u8; 63] {
-    let mut decoded_bracket: [u8; 63] = [0; 63];
+fn decode_and_score(bracket: &[u8; 8], winning_bracket: &[u8; 63], decoded_bracket: &mut [u8; 63]) -> u8 {
     let mut bit_count: usize = 0; // also game_count
+    let mut round_size: usize = 32;
+    let mut round_count: usize = 0;
+    let mut round_score: u8 = 1;
+    let mut score: u8 = 0;
 
     for &b in bracket {
         let mut mask: u8 = 0x80;
@@ -172,12 +175,22 @@ fn decode_bytes(bracket: &[u8; 8]) -> [u8; 63] {
                 decoded_bracket[2*(bit_count - 32) + second_team_offset]
             };
 
+            // calculate the score
+            score += round_score * (decoded_bracket[bit_count] == winning_bracket[bit_count]) as u8;
+
             mask >>= 1;
             bit_count += 1;
+            round_count += 1;
+
+            if round_count >= round_size {
+                round_size >>= 1; // divide by 2
+                round_score <<= 1; // multiply by 2
+                round_count = 0;
+            }
         }
     }
 
-    return decoded_bracket;
+    return score;
 }
 
 
@@ -250,26 +263,6 @@ fn parse_bracket(raw_bracket: &String) -> [u8; 63] {
     }
 
     return bracket;
-}
-
-
-fn score_bracket(bracket: &[u8; 63], winning_bracket: &[u8; 63]) -> u8 {
-    let mut score: u8 = 0;
-    let mut round_length: u8 = 32; // 32 results in the first round
-    let mut round_points: u8 = 1; // points per correct team
-
-    let mut rounds: u8 = 0;
-    for (team1, winning_team) in bracket.into_iter().zip(winning_bracket.into_iter()) {
-        score += round_points * (team1 == winning_team) as u8;
-
-        rounds += 1;
-        if rounds >= round_length {
-            round_points <<= 1;
-            round_length += 32 / round_points;
-        }
-    }
-
-    return score;
 }
 
 
@@ -376,8 +369,8 @@ fn score_brackets() {
         let mut temp_bytes: [u8; 8] = [0; 8];
         let mut bytes: usize = 0;
         while reader.read_exact(&mut temp_bytes).is_ok() {
-            let bracket: [u8; 63] = decode_bytes(&temp_bytes);
-            let score: u8 = score_bracket(&bracket, &winning_bracket);
+            let mut bracket: [u8; 63] = [0; 63];
+            let score: u8 = decode_and_score(&temp_bytes, &winning_bracket, &mut bracket);
 
             bracket_score_accumulator += score as usize;
             score_distribution[score as usize] += 1;
@@ -451,18 +444,6 @@ mod tests {
     }
 
     #[test]
-    fn test_score_bracket() {
-        let winning_bracket: &str = "1 8 5 4 11 14 7 2 17 24 28 29 22 19 23 18 33 41 44 45 38 35 42 34 49 57 53 52 59 51 55 50;1 4 11 7 17 29 19 18 33 44 38 34 49 52 51 50;1 7 17 18 33 34 49 50;1 17 33 49;17 33;17";
-        let test_bracket: &str = "0 8 5 4 11 14 7 2 17 24 28 29 22 19 23 18 33 41 44 45 38 35 42 34 49 57 53 52 59 51 55 50;1 0 11 7 17 29 19 18 33 44 38 34 49 52 51 50;1 7 0 18 33 34 49 50;1 17 33 0;17 0;0";
-
-        let winning_bracket_encoded: [u8; 63] = parse_bracket(&winning_bracket.to_string());
-        let test_bracket_encoded: [u8; 63] = parse_bracket(&test_bracket.to_string());
-
-        assert_eq!(score_bracket(&winning_bracket_encoded, &winning_bracket_encoded), 192);
-        assert_eq!(score_bracket(&winning_bracket_encoded, &test_bracket_encoded), 129);
-    }
-
-    #[test]
     fn test_encode_bracket() {
         let test_bracket: [u8; 63] = [ // expanded for clarity
             1, 8, 5, 4, 11, 14, 7, 2, 17, 24, 28, 29, 22, 19, 23, 18, 33, 41, 44, 45, 38, 35, 42, 34, 49, 57, 53, 52, 59, 51, 55, 50, 
@@ -486,8 +467,25 @@ mod tests {
                                 20, 19, 18, 40, 37, 35, 34, 49, 61, 51, 50, 5, 6, 17, 19, 40, 34, 49, 
                                 50, 5, 17, 34, 49, 17, 49, 17];
         let test_bracket: [u8; 8] = [0x52, 0x42, 0x02, 0x50, 0x07, 0xB7, 0x85, 0x2C];
-        let test_bracket_decoded: [u8; 63] = decode_bytes(&test_bracket);
+        let mut test_bracket_decoded: [u8; 63] = [0; 63];
+        let _ = decode_and_score(&test_bracket, &[0; 63], &mut test_bracket_decoded);
         assert!(test_bracket_decoded.iter().eq(answer.iter()));
+    }
+
+    #[test]
+    fn test_score_bracket() {
+        // this test uses the encode and decode functionality from the two previous tests, so if one of those is failing and 
+        // this is failing it may be a cascading failure and it is worth to to resolve the encode/decode test ebfore this test
+
+        let test_bracket: &str = "1 8 5 4 11 14 7 2 17 24 28 29 22 19 23 18 33 41 44 45 38 35 42 34 49 57 53 52 59 51 55 50;1 4 11 7 17 29 19 18 33 44 38 34 49 52 51 50;1 7 17 18 33 34 49 50;1 17 33 49;17 33;17";
+        let winning_bracket: &str = "0 8 5 4 11 14 7 2 17 24 28 29 22 19 23 18 33 41 44 45 38 35 42 34 49 57 53 52 59 51 55 50;1 0 11 7 17 29 19 18 33 44 38 34 49 52 51 50;1 7 0 18 33 34 49 50;1 17 33 0;17 0;0";
+
+        let winning_bracket_encoded: [u8; 63] = parse_bracket(&winning_bracket.to_string());
+        let test_bracket_encoded: [u8; 8] = encode_to_bytes(&parse_bracket(&test_bracket.to_string()));
+        let mut test_bracket_decoded: [u8; 63] = [0; 63];
+
+        // check scoring functionality
+        assert_eq!(decode_and_score(&test_bracket_encoded, &winning_bracket_encoded, &mut test_bracket_decoded), 129);
     }
 
 
@@ -504,6 +502,8 @@ mod tests {
 
     #[test]
     fn test_print_example() {
+        // this is not a test, but it was convenient to put it here
+
         let test_bracket: [u8; 63] = [1, 9, 5, 13, 6, 3, 10, 2, 17, 25, 21, 20, 22, 19, 26, 18, 33, 40, 37, 36, 38, 35, 42, 34, 49, 57, 53, 61, 54, 51, 55, 50, 1, 5, 6, 10, 17, 20, 19, 18, 40, 37, 35, 34, 49, 61, 51, 50, 5, 6, 17, 19, 40, 34, 49, 50, 5, 17, 34, 49, 17, 49, 17];
         let test_bracket_encoded1: [u8; 64] = encode_to_bytes_binary_version1(&test_bracket);
         let test_bracket_encoded2: [u8; 8] = encode_to_bytes(&test_bracket);
