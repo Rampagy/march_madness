@@ -379,7 +379,7 @@ fn score_brackets() {
             let bracket: [u8; 63] = decode_bytes(&temp_bytes);
             let score: u8 = score_bracket(&bracket, &winning_bracket);
 
-            bracket_score_accumulator = bracket_score_accumulator.saturating_add(score as usize);
+            bracket_score_accumulator += score as usize;
             score_distribution[score as usize] += 1;
 
             // track number of perfect brackets
@@ -391,7 +391,7 @@ fn score_brackets() {
                 top_brackets.sort_by_key(|x| (*x).0);
                 top_brackets.reverse();
 
-                // if the length is longer than 10, remove the last one as it's not top 10
+                // if the length is longer than 10, remove the last one as it's no longer top 10
                 if top_brackets.len() > 10 {
                     top_brackets.remove(10);
                 }
