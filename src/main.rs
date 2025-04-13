@@ -13,7 +13,7 @@ const CREATE_NEW_FILE_BRACKET_THRESHOLD: usize = 120_000_000; // after so many b
 const FILE_NAME: &str = "brackets";
 const WINNING_BRACKET_FILE_NAME: &str = "winning_bracket.txt";
 const BRACKET_RESOLUTION: usize = 1_000_000; // minimum number (and step) of brackets
-const FILE_READ_WRITE_BUFFER_SIZE: usize = 20_971_520; // 20 MB
+const FILE_READ_WRITE_BUFFER_SIZE: usize = 104_857_600; // 100 MB
 const STARTING_BRACKET: [u8; 64] = [
     1,  16,  8,  9,  5, 12,  4, 13,  6, 11,  3, 14,  7, 10,  2, 15, // east
     17, 32, 24, 25, 21, 28, 20, 29, 22, 27, 19, 30, 23, 26, 18, 31, // west
@@ -158,45 +158,22 @@ fn encode_to_bytes(bracket: &[u8; 63]) -> [u8; 8] {
 fn decode_bytes(bracket: &[u8; 8]) -> [u8; 63] {
     let mut decoded_bracket: [u8; 63] = [0; 63];
     let mut bit_count: usize = 0; // also game_count
-    let mut round_start: usize = 0;
-    let mut round_size: usize = 32;
 
     for &b in bracket {
         let mut mask: u8 = 0x80;
-        while mask > 0 {
-            if bit_count >= 63 {
-                // don't count the final bit
-                break;
-            }
+        while mask > 0 && bit_count < 63 {
 
-            if (mask & b) == 0 {
-                // first team won
-                if bit_count < 32 {
-                    // the first round needs to get the winners from the starting bracket
-                    decoded_bracket[bit_count] = STARTING_BRACKET[2*bit_count];
-                } else {
-                    // the subsequent rounds need to get the winners from the previous round winners
-                    decoded_bracket[bit_count] = decoded_bracket[2*(bit_count - 32)];
-                }
+            let second_team_offset: usize = ((mask & b) != 0) as usize;
+            decoded_bracket[bit_count] = if bit_count < 32 {
+                // the first round needs to get the winners from the starting bracket
+                 STARTING_BRACKET[2*bit_count + second_team_offset]
             } else {
-                // second team won
-                if bit_count < 32 {
-                    // the first round needs to get the winners from the starting bracket
-                    decoded_bracket[bit_count] = STARTING_BRACKET[2*bit_count+1];
-                } else {
-                    // the subsequent rounds need to get the winners from the previous round winners
-                    decoded_bracket[bit_count] = decoded_bracket[2*(bit_count - 32) + 1];
-                }
-            }
+                // the subsequent rounds need to get the winners from the previous round winners
+                decoded_bracket[2*(bit_count - 32) + second_team_offset]
+            };
 
             mask >>= 1;
-            bit_count  += 1;
-
-            // Move to next round
-            if bit_count == round_start + round_size {
-                round_start += round_size;
-                round_size /= 2;
-            }
+            bit_count += 1;
         }
     }
 
@@ -283,9 +260,7 @@ fn score_bracket(bracket: &[u8; 63], winning_bracket: &[u8; 63]) -> u8 {
 
     let mut rounds: u8 = 0;
     for (team1, winning_team) in bracket.into_iter().zip(winning_bracket.into_iter()) {
-        if team1 == winning_team {
-            score += round_points;
-        }
+        score += round_points * (team1 == winning_team) as u8;
 
         rounds += 1;
         if rounds >= round_length {
