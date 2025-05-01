@@ -1,5 +1,5 @@
 use rand::Rng;
-use std::env;
+//use std::env;
 use std::fs;
 use std::fs::{File, OpenOptions};
 use std::io::{prelude::*, BufReader, BufWriter, Write};
@@ -7,6 +7,22 @@ use std::collections::HashSet;
 use std::ops::Div;
 use glob::glob;
 use rand_distr::{Normal, Distribution};
+use clap::Parser;
+
+
+/// Program to generate and score march madness brackets
+#[derive(Parser, Debug)]
+#[command(version, about, long_about = None)]
+struct Args {
+    /// To generate new (or more) brackets.
+    /// If not provided then it will score the existing brackets.
+    #[arg(short, long, default_value_t = false)]
+    generate: bool,
+
+    /// Number of brackets to generate (in millions)
+    #[arg(short, long, default_value_t = 1)]
+    count: usize,
+}
 
 
 const CREATE_NEW_FILE_BRACKET_THRESHOLD: usize = 120_000_000; // after so many brackets start a new file
@@ -22,7 +38,9 @@ const STARTING_BRACKET: [u8; 64] = [
 ];
 
 
-#[derive(PartialEq)] #[repr(u8)]
+#[derive(PartialEq)] 
+#[repr(u8)]
+#[allow(unused)]
 enum ProbabilityMethod {
     Year2024 = 0,
     Year2025 = 1,
@@ -400,33 +418,20 @@ fn score_brackets() {
 
 
 fn main() {
-    let args: Vec<String> = env::args().collect();
+    let args: Args = Args::parse();
 
-    if args.len() > 1 {
-        if (args.len() == 3 || args.len() == 4) && args[1].trim().to_uppercase() == "--GENERATE" {
-            // number is entered in millions (2 is interpreted as 2_000_000)
-            let num_brackets: usize = args[2].trim().parse::<usize>().unwrap_or(0) * BRACKET_RESOLUTION;
-            let method: ProbabilityMethod = if args.len() == 4 {
-                if args[3].trim().parse::<u8>().unwrap_or(0) == 0 {
-                    // only use legacy method if explicitly stated
-                    ProbabilityMethod::Year2024
-                } else { ProbabilityMethod::Year2025 }
-            } else { ProbabilityMethod::Year2025 };
+    if args.generate {
+        // number is entered in millions (2 is interpreted as 2_000_000)
+        let num_brackets: usize = args.count * BRACKET_RESOLUTION;
+        let method: ProbabilityMethod = ProbabilityMethod::Year2025;
 
-            if num_brackets > 0 {
-                generate_brackets(num_brackets, &method);
-            } else {
-                println!("Invalid number of brackets to generate: {}", args[2]);
-            }
-        } else if args.len() == 2 && args[1].trim().to_uppercase() == "--SCORE" {
-            score_brackets();
+        if num_brackets > 0 {
+            generate_brackets(num_brackets, &method);
         } else {
-            println!("Improper arguments!");
+            println!("Invalid number of brackets to generate: {}", args.count);
         }
     } else {
-        // not enough arguments, do nothing
-        // TODO: print help instead
-        println!("Not enough arguments");
+        score_brackets();
     }
 }
 
