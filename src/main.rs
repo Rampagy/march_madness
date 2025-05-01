@@ -1,13 +1,12 @@
 use rand::Rng;
-//use std::env;
 use std::fs;
 use std::fs::{File, OpenOptions};
 use std::io::{prelude::*, BufReader, BufWriter, Write};
 use std::collections::HashSet;
-use std::ops::Div;
 use glob::glob;
 use rand_distr::{Normal, Distribution};
 use clap::Parser;
+use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 
 
 /// Program to generate and score march madness brackets
@@ -213,11 +212,21 @@ fn decode_and_score(bracket: &[u8; 8], winning_bracket: &[u8; 63], decoded_brack
 
 
 fn generate_brackets(num_of_brackets: usize, method: &ProbabilityMethod) {
-    let mut unique_brackets: HashSet<[u8; 8]> = HashSet::with_capacity(num_of_brackets);
+    let mut unique_brackets: HashSet<[u8; 8]> = HashSet::with_capacity(num_of_brackets / BRACKET_RESOLUTION);
     let mut i: usize = 0;
-    let mut repeated_brackets: usize = 0;
+    let mut _repeated_brackets: usize = 0;
     let mut file_number: usize = 0;
     let mut file_count: usize = 0;
+
+    let m: MultiProgress = MultiProgress::new();
+    let sty: ProgressStyle = ProgressStyle::with_template(
+            "[{elapsed_precise}] {bar:40.cyan/blue} {pos:>16}/{len:16} {msg}",
+        )
+        .unwrap()
+        .progress_chars("##-");
+    let progress_bar: ProgressBar = m.add(ProgressBar::new(num_of_brackets as u64));
+    progress_bar.set_style(sty.clone());
+    progress_bar.set_message("initializing");
 
     // open a file
     let mut f: fs::File = OpenOptions::new()
@@ -228,6 +237,8 @@ fn generate_brackets(num_of_brackets: usize, method: &ProbabilityMethod) {
         .unwrap();
     let mut writer: BufWriter<File> = BufWriter::with_capacity(FILE_READ_WRITE_BUFFER_SIZE, f);
 
+    progress_bar.set_message("generating");
+    progress_bar.inc(0);
     while i < num_of_brackets {
         let mut bracket: [u8; 63] = [0; 63];
         generate_bracket(&mut bracket, &method);
@@ -237,15 +248,14 @@ fn generate_brackets(num_of_brackets: usize, method: &ProbabilityMethod) {
         if unique_brackets.insert(encoded_bracket) {
             let _ = writer.write(&encoded_bracket);
 
-            if (i+1) % 1_000_000 == 0 {
-                println!("{}", 1+i.div(1_000_000));
-                println!("repeated brackets: {}", repeated_brackets);
+            if (i+1) % BRACKET_RESOLUTION == 0 {
+                progress_bar.inc(BRACKET_RESOLUTION as u64);
             }
 
             i += 1;
             file_count += 1;
         } else {
-            repeated_brackets += 1;
+            _repeated_brackets += 1;
         }
 
         if file_count >= CREATE_NEW_FILE_BRACKET_THRESHOLD {
@@ -266,7 +276,9 @@ fn generate_brackets(num_of_brackets: usize, method: &ProbabilityMethod) {
         }
     }
 
-    println!("repeated brackets: {}", repeated_brackets);
+    progress_bar.set_message("done");
+    progress_bar.finish();
+    println!("Bracket generation complete!");
 }
 
 
@@ -374,6 +386,7 @@ fn score_brackets() {
         max_bracket_score = calc_max_bracket_points(&winning_bracket);
     }
 
+    let pbar: ProgressBar = ProgressBar::new_spinner();
     let mut top_brackets: Vec<(u8, usize, String, [u8; 63])> = Vec::with_capacity(11);
     let mut score_distribution: [usize; 193] = [0; 193];
     for entry in glob("*_brackets*.txt").unwrap()
@@ -409,8 +422,11 @@ fn score_brackets() {
             }
 
             bytes += 8;
+            pbar.tick();
         }
     }
+
+    pbar.finish_and_clear();
 
     // print results for all files
     print_results(perfect_brackets, total_brackets, bracket_score_accumulator, max_bracket_score, &score_distribution, &top_brackets);
