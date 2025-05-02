@@ -10,12 +10,12 @@ use clap::Parser;
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 
 
-/// Program to generate and score march madness brackets
+/// Generates and scores march madness brackets
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
 struct Args {
-    /// To generate new (or more) brackets.
-    /// If not provided then it will score the existing brackets.
+    /// Generate new brackets.
+    /// If not provided it scores existing brackets.
     #[arg(short, long, default_value_t = false)]
     generate: bool,
 
