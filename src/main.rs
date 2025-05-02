@@ -386,7 +386,10 @@ fn score_brackets() {
         max_bracket_score = calc_max_bracket_points(&winning_bracket);
     }
 
-    let pbar: ProgressBar = ProgressBar::new_spinner();
+    let spinner_style: ProgressStyle = ProgressStyle::with_template("{spinner:.yellow} [{elapsed_precise:.red}] {bytes:.blue} ({bytes_per_sec:.green})").unwrap();
+    let pbar: ProgressBar = ProgressBar::new(10);
+    pbar.set_style(spinner_style.clone());
+
     let mut top_brackets: Vec<(u8, usize, String, [u8; 63])> = Vec::with_capacity(11);
     let mut score_distribution: [usize; 193] = [0; 193];
     for entry in glob("*_brackets*.txt").unwrap()
@@ -422,7 +425,8 @@ fn score_brackets() {
             }
 
             bytes += 8;
-            pbar.tick();
+            pbar.set_message(format!("{}", total_brackets) );
+            pbar.inc(1);
         }
     }
 
