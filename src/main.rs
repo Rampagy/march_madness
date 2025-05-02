@@ -386,7 +386,9 @@ fn score_brackets() {
         max_bracket_score = calc_max_bracket_points(&winning_bracket);
     }
 
-    let spinner_style: ProgressStyle = ProgressStyle::with_template("{spinner:.yellow} [{elapsed_precise:.red}] {bytes:.blue} ({bytes_per_sec:.green})").unwrap();
+    let spinner_style: ProgressStyle = ProgressStyle::with_template(
+            "{spinner:.blue} [{elapsed_precise}] {msg} brackets ({bytes_per_sec})"
+        ).unwrap();
     let pbar: ProgressBar = ProgressBar::new(10);
     pbar.set_style(spinner_style.clone());
 
