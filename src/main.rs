@@ -3,6 +3,7 @@ use std::fs;
 use std::fs::{File, OpenOptions};
 use std::io::{prelude::*, BufReader, BufWriter, Write};
 use std::collections::HashSet;
+use std::os::unix::fs::MetadataExt;
 use glob::glob;
 use rand_distr::{Normal, Distribution};
 use clap::Parser;
@@ -214,13 +215,13 @@ fn decode_and_score(bracket: &[u8; 8], winning_bracket: &[u8; 63], decoded_brack
 fn generate_brackets(num_of_brackets: usize, method: &ProbabilityMethod) {
     let mut unique_brackets: HashSet<[u8; 8]> = HashSet::with_capacity(num_of_brackets / BRACKET_RESOLUTION);
     let mut i: usize = 0;
-    let mut _repeated_brackets: usize = 0;
+    let mut repeated_brackets: usize = 0;
     let mut file_number: usize = 0;
     let mut file_count: usize = 0;
 
     let m: MultiProgress = MultiProgress::new();
     let sty: ProgressStyle = ProgressStyle::with_template(
-            "[{elapsed_precise}] {bar:40.cyan/blue} {pos:>16}/{len:16} {msg}",
+            "[{elapsed_precise}] {bar:40.cyan/blue} {pos:>12}/{len:12} ({eta_precise}) {msg}",
         )
         .unwrap()
         .progress_chars("##-");
@@ -237,7 +238,7 @@ fn generate_brackets(num_of_brackets: usize, method: &ProbabilityMethod) {
         .unwrap();
     let mut writer: BufWriter<File> = BufWriter::with_capacity(FILE_READ_WRITE_BUFFER_SIZE, f);
 
-    progress_bar.set_message("generating");
+    progress_bar.set_message(format!("{} repeats", repeated_brackets));
     progress_bar.inc(0);
     while i < num_of_brackets {
         let mut bracket: [u8; 63] = [0; 63];
@@ -248,14 +249,11 @@ fn generate_brackets(num_of_brackets: usize, method: &ProbabilityMethod) {
         if unique_brackets.insert(encoded_bracket) {
             let _ = writer.write(&encoded_bracket);
 
-            if (i+1) % BRACKET_RESOLUTION == 0 {
-                progress_bar.inc(BRACKET_RESOLUTION as u64);
-            }
-
             i += 1;
             file_count += 1;
+            progress_bar.inc(1);
         } else {
-            _repeated_brackets += 1;
+            repeated_brackets += 1;
         }
 
         if file_count >= CREATE_NEW_FILE_BRACKET_THRESHOLD {
@@ -264,7 +262,6 @@ fn generate_brackets(num_of_brackets: usize, method: &ProbabilityMethod) {
 
             // create a new file (if there are more brackets to create)
             if i < num_of_brackets {
-                println!("Creating new file..");
                 f = OpenOptions::new()
                     .create(true)
                     .write(true)
@@ -276,7 +273,6 @@ fn generate_brackets(num_of_brackets: usize, method: &ProbabilityMethod) {
         }
     }
 
-    progress_bar.set_message("done");
     progress_bar.finish();
     println!("Bracket generation complete!");
 }
@@ -386,11 +382,10 @@ fn score_brackets() {
         max_bracket_score = calc_max_bracket_points(&winning_bracket);
     }
 
-    let spinner_style: ProgressStyle = ProgressStyle::with_template(
-            "{spinner:.blue} [{elapsed_precise}] {msg} brackets ({bytes_per_sec})"
-        ).unwrap();
     let pbar: ProgressBar = ProgressBar::new(10);
-    pbar.set_style(spinner_style.clone());
+    pbar.set_style(ProgressStyle::with_template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {bytes}/{total_bytes} ({eta}) {msg}")
+        .unwrap()
+        .progress_chars("#>-"));
 
     let mut top_brackets: Vec<(u8, usize, String, [u8; 63])> = Vec::with_capacity(11);
     let mut score_distribution: [usize; 193] = [0; 193];
@@ -399,8 +394,11 @@ fn score_brackets() {
 
         let scoring_bracket_filename: String = entry.unwrap().into_os_string().into_string().unwrap();
 
-        let file: File = File::open(&scoring_bracket_filename).unwrap();
-        let mut reader: BufReader<File> = BufReader::with_capacity(FILE_READ_WRITE_BUFFER_SIZE, file);
+        let file: File = File::open(&scoring_bracket_filename.clone()).unwrap();
+        let mut reader: BufReader<File> = BufReader::with_capacity(FILE_READ_WRITE_BUFFER_SIZE, file.try_clone().unwrap());
+        pbar.reset();
+        pbar.set_length(file.metadata().unwrap().size());
+        pbar.set_message(scoring_bracket_filename.clone());
 
         let mut temp_bytes: [u8; 8] = [0; 8];
         let mut bytes: usize = 0;
@@ -427,8 +425,7 @@ fn score_brackets() {
             }
 
             bytes += 8;
-            pbar.set_message(format!("{}", total_brackets) );
-            pbar.inc(1);
+            pbar.inc(8);
         }
     }
 
