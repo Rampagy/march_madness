@@ -382,15 +382,31 @@ fn score_brackets() {
         max_bracket_score = calc_max_bracket_points(&winning_bracket);
     }
 
-    let pbar: ProgressBar = ProgressBar::new(10);
-    pbar.set_style(ProgressStyle::with_template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {bytes}/{total_bytes} ({eta}) {msg}")
+    let m: MultiProgress = MultiProgress::new();
+    let pbar: ProgressBar = m.add(ProgressBar::new(10));
+    let tbar: ProgressBar = m.add(ProgressBar::new(10));
+
+    pbar.set_style(ProgressStyle::with_template("{spinner:.green} [{elapsed_precise}] [{bar:40.green/green}] {bytes}/{total_bytes} ({eta})")
         .unwrap()
-        .progress_chars("#>-"));
+        .progress_chars("##-"));
+    tbar.set_style(ProgressStyle::with_template("{spinner:.blue} [{elapsed_precise}] [{bar:40.blue/cyan}] {pos}/{len} [{msg}]")
+        .unwrap()
+        .progress_chars("##-"));
 
     let mut top_brackets: Vec<(u8, usize, String, [u8; 63])> = Vec::with_capacity(11);
     let mut score_distribution: [usize; 193] = [0; 193];
+
+    let mut files: u64 = 0;
+    for _ in glob("*_brackets*.txt").unwrap()
+                                            .chain(glob("*_brackets*.bin").unwrap()) {
+        // count number of files
+        files += 1;
+    }
+
+    tbar.set_length(files);
+
     for entry in glob("*_brackets*.txt").unwrap()
-                                                .chain(glob("*_brackets*.bin").unwrap()) {
+                                            .chain(glob("*_brackets*.bin").unwrap()) {
 
         let scoring_bracket_filename: String = entry.unwrap().into_os_string().into_string().unwrap();
 
@@ -398,7 +414,8 @@ fn score_brackets() {
         let mut reader: BufReader<File> = BufReader::with_capacity(FILE_READ_WRITE_BUFFER_SIZE, file.try_clone().unwrap());
         pbar.reset();
         pbar.set_length(file.metadata().unwrap().size());
-        pbar.set_message(scoring_bracket_filename.clone());
+        tbar.set_message(scoring_bracket_filename.clone());
+        tbar.inc(0);
 
         let mut temp_bytes: [u8; 8] = [0; 8];
         let mut bytes: usize = 0;
@@ -426,10 +443,14 @@ fn score_brackets() {
 
             bytes += 8;
             pbar.inc(8);
+            tbar.inc(0);
         }
+
+        tbar.inc(1);
     }
 
     pbar.finish_and_clear();
+    tbar.finish_and_clear();
 
     // print results for all files
     print_results(perfect_brackets, total_brackets, bracket_score_accumulator, max_bracket_score, &score_distribution, &top_brackets);
