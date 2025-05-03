@@ -238,7 +238,6 @@ fn generate_brackets(num_of_brackets: usize, method: &ProbabilityMethod) {
         .unwrap();
     let mut writer: BufWriter<File> = BufWriter::with_capacity(FILE_READ_WRITE_BUFFER_SIZE, f);
 
-    progress_bar.set_message(format!("{} repeats", repeated_brackets));
     progress_bar.inc(0);
     while i < num_of_brackets {
         let mut bracket: [u8; 63] = [0; 63];
@@ -254,6 +253,7 @@ fn generate_brackets(num_of_brackets: usize, method: &ProbabilityMethod) {
             progress_bar.inc(1);
         } else {
             repeated_brackets += 1;
+            progress_bar.set_message(format!("{} repeats", repeated_brackets));
         }
 
         if file_count >= CREATE_NEW_FILE_BRACKET_THRESHOLD {
