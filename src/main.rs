@@ -3,12 +3,15 @@ use std::fs;
 use std::fs::{File, OpenOptions};
 use std::io::{prelude::*, BufReader, BufWriter, Write};
 use std::collections::HashSet;
-use std::os::unix::fs::MetadataExt;
 use glob::glob;
 use rand_distr::{Normal, Distribution};
 use clap::Parser;
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 
+#[cfg(target_os = "linux")]
+use std::os::unix::fs::MetadataExt;
+#[cfg(target_os = "windows")]
+use std::os::windows::fs::MetadataExt;
 
 /// Generates and scores march madness brackets
 #[derive(Parser, Debug)]
@@ -413,7 +416,13 @@ fn score_brackets() {
         let file: File = File::open(&scoring_bracket_filename.clone()).unwrap();
         let mut reader: BufReader<File> = BufReader::with_capacity(FILE_READ_WRITE_BUFFER_SIZE, file.try_clone().unwrap());
         pbar.reset();
+
+        #[cfg(target_os = "linux")]
         pbar.set_length(file.metadata().unwrap().size());
+
+        #[cfg(target_os = "windows")]
+        pbar.set_length(file.metadata().unwrap().file_size());
+
         tbar.set_message(scoring_bracket_filename.clone());
         tbar.inc(0);
 
