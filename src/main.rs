@@ -1,4 +1,4 @@
-use rand::Rng;
+use rand::prelude::*;
 use std::fs;
 use std::fs::{File, OpenOptions};
 use std::io::{prelude::*, BufReader, BufWriter, Write};
@@ -27,7 +27,7 @@ struct Args {
     count: usize,
 }
 
-
+const UNIQUE_BRACKETS_MAX_SIZE: usize = 96*1024*1024*1024; // 96 gibibytes
 const CREATE_NEW_FILE_BRACKET_THRESHOLD: usize = 120_000_000; // after so many brackets start a new file
 const FILE_NAME: &str = "brackets";
 const WINNING_BRACKET_FILE_NAME: &str = "winning_bracket.txt";
@@ -151,7 +151,7 @@ fn generate_bracket(bracket: &mut [u8; 63], method: &ProbabilityMethod) {
 }
 
 
-fn encode_to_bytes(bracket: &[u8; 63]) -> [u8; 8] {
+fn encode_to_bytes(bracket: &[u8; 63]) -> u64 {
     let mut encoded_bracket: u64 = 0;
 
     for (idx, top_team) in bracket.into_iter().enumerate() {
@@ -172,7 +172,7 @@ fn encode_to_bytes(bracket: &[u8; 63]) -> [u8; 8] {
     }
 
     // left justify the 63 bits
-    return (encoded_bracket << 1).to_be_bytes();
+    return encoded_bracket << 1;
 }
 
 
@@ -216,9 +216,10 @@ fn decode_and_score(bracket: &[u8; 8], winning_bracket: &[u8; 63], decoded_brack
 
 
 fn generate_brackets(num_of_brackets: usize, method: &ProbabilityMethod) {
-    let mut unique_brackets: HashSet<[u8; 8]> = HashSet::with_capacity(num_of_brackets / BRACKET_RESOLUTION);
+    let mut unique_brackets: HashSet<u64> = HashSet::with_capacity(num_of_brackets / BRACKET_RESOLUTION);
+    let mut repeated_brackets: HashSet<u64> = HashSet::new();
     let mut i: usize = 0;
-    let mut repeated_brackets: usize = 0;
+    //let mut repeated_brackets: usize = 0;
     let mut file_number: usize = 0;
     let mut file_count: usize = 0;
 
@@ -245,23 +246,26 @@ fn generate_brackets(num_of_brackets: usize, method: &ProbabilityMethod) {
     while i < num_of_brackets {
         let mut bracket: [u8; 63] = [0; 63];
         generate_bracket(&mut bracket, &method);
-        let encoded_bracket: [u8; 8] = encode_to_bytes(&bracket);
+        let encoded_bracket: u64 = encode_to_bytes(&bracket);
 
         // only write to the file if it's a unique bracket (inserted into unique_brackets)
         if unique_brackets.insert(encoded_bracket) {
-            let _ = writer.write(&encoded_bracket);
+            let _ = writer.write(&encoded_bracket.to_be_bytes());
 
             i += 1;
             file_count += 1;
             progress_bar.inc(1);
         } else {
-            repeated_brackets += 1;
-            progress_bar.set_message(format!("{} repeats", repeated_brackets));
+            repeated_brackets.insert(encoded_bracket);
+            progress_bar.set_message(format!("{} repeats", repeated_brackets.len()));
         }
 
         if file_count >= CREATE_NEW_FILE_BRACKET_THRESHOLD {
             file_count = 0;
             file_number += 1;
+
+            // check to see if hashset is getting too big and remove some if necessary
+            remove_brackets(&mut unique_brackets, &mut repeated_brackets);
 
             // create a new file (if there are more brackets to create)
             if i < num_of_brackets {
@@ -278,6 +282,31 @@ fn generate_brackets(num_of_brackets: usize, method: &ProbabilityMethod) {
 
     progress_bar.finish();
     println!("Bracket generation complete!");
+}
+
+fn remove_brackets(unique_brackets: &mut HashSet<u64>, repeated_brackets: &mut HashSet<u64>) {
+    // check to see if there's enough room to add the next bracket
+    if unique_brackets.len() * 8 > UNIQUE_BRACKETS_MAX_SIZE {
+        // start removing unrepeated brackets until below a certain threshold
+
+        loop {
+            let b_opt: Option<&u64> = unique_brackets.iter().next();
+
+            if b_opt.is_some() {
+                let b: u64 = *b_opt.unwrap();
+                if !repeated_brackets.contains(&b) {
+                    unique_brackets.remove(&b);
+                }
+
+                if unique_brackets.len() * 8 > ((UNIQUE_BRACKETS_MAX_SIZE >> 1) + (UNIQUE_BRACKETS_MAX_SIZE >> 2)) {
+                    // only clear out 25% of the unique brackets
+                    break;
+                }
+            } else {
+                break;
+            }
+        }
+    }
 }
 
 
@@ -508,7 +537,7 @@ mod tests {
                                                                      33
         ];
 
-        let test_bracket_encoded: [u8; 8] = encode_to_bytes(&test_bracket);
+        let test_bracket_encoded: [u8; 8] = encode_to_bytes(&test_bracket).to_be_bytes();
 
         let answer: [u8; 8] = [12, 48, 114, 72, 7, 23, 85, 10];
         assert!(test_bracket_encoded.iter().eq(answer.iter()));
@@ -535,7 +564,7 @@ mod tests {
         let winning_bracket: &str = "0 8 5 4 11 14 7 2 17 24 28 29 22 19 23 18 33 41 44 45 38 35 42 34 49 57 53 52 59 51 55 50;1 0 11 7 17 29 19 18 33 44 38 34 49 52 51 50;1 7 0 18 33 34 49 50;1 17 33 0;17 0;0";
 
         let winning_bracket_encoded: [u8; 63] = parse_bracket(&winning_bracket.to_string());
-        let test_bracket_encoded: [u8; 8] = encode_to_bytes(&parse_bracket(&test_bracket.to_string()));
+        let test_bracket_encoded: [u8; 8] = encode_to_bytes(&parse_bracket(&test_bracket.to_string())).to_be_bytes();
         let mut test_bracket_decoded: [u8; 63] = [0; 63];
 
         // check scoring functionality
@@ -560,7 +589,7 @@ mod tests {
 
         let test_bracket: [u8; 63] = [1, 9, 5, 13, 6, 3, 10, 2, 17, 25, 21, 20, 22, 19, 26, 18, 33, 40, 37, 36, 38, 35, 42, 34, 49, 57, 53, 61, 54, 51, 55, 50, 1, 5, 6, 10, 17, 20, 19, 18, 40, 37, 35, 34, 49, 61, 51, 50, 5, 6, 17, 19, 40, 34, 49, 50, 5, 17, 34, 49, 17, 49, 17];
         let test_bracket_encoded1: [u8; 64] = encode_to_bytes_binary_version1(&test_bracket);
-        let test_bracket_encoded2: [u8; 8] = encode_to_bytes(&test_bracket);
+        let test_bracket_encoded2: [u8; 8] = encode_to_bytes(&test_bracket).to_be_bytes();
 
         for t in test_bracket {
             print!("{} ", t);
