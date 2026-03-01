@@ -27,12 +27,12 @@ struct Args {
     count: usize,
 }
 
-const UNIQUE_BRACKETS_MAX_SIZE: usize = 96*1024*1024*1024; // 96 gibibytes
+const UNIQUE_BRACKETS_MAX_SIZE: usize = 64*1024*1024*1024; // 64 gibibytes
 const CREATE_NEW_FILE_BRACKET_THRESHOLD: usize = 120_000_000; // after so many brackets start a new file
 const FILE_NAME: &str = "brackets";
 const WINNING_BRACKET_FILE_NAME: &str = "winning_bracket.txt";
 const BRACKET_RESOLUTION: usize = 1_000_000; // minimum number (and step) of brackets
-const FILE_READ_WRITE_BUFFER_SIZE: usize = 104_857_600; // 100 MB
+const FILE_READ_WRITE_BUFFER_SIZE: usize = 1024*1024*1024; // 100 mibibytes
 const STARTING_BRACKET: [u8; 64] = [
     1,  16,  8,  9,  5, 12,  4, 13,  6, 11,  3, 14,  7, 10,  2, 15, // east
     17, 32, 24, 25, 21, 28, 20, 29, 22, 27, 19, 30, 23, 26, 18, 31, // west
@@ -241,7 +241,7 @@ fn generate_brackets(num_of_brackets: usize, method: &ProbabilityMethod) {
         .unwrap();
     let mut writer: BufWriter<File> = BufWriter::with_capacity(FILE_READ_WRITE_BUFFER_SIZE, f);
 
-    progress_bar.inc(0);
+    progress_bar.force_draw();
     while i < num_of_brackets {
         let mut bracket: [u8; 63] = [0; 63];
         generate_bracket(&mut bracket, &method);
@@ -257,6 +257,7 @@ fn generate_brackets(num_of_brackets: usize, method: &ProbabilityMethod) {
         } else {
             repeated_brackets.insert(encoded_bracket);
             progress_bar.set_message(format!("{} repeats", repeated_brackets.len()));
+            progress_bar.force_draw();
         }
 
         if file_count >= CREATE_NEW_FILE_BRACKET_THRESHOLD {
@@ -264,7 +265,7 @@ fn generate_brackets(num_of_brackets: usize, method: &ProbabilityMethod) {
             file_number += 1;
 
             progress_bar.set_message(format!("optimizing cache"));
-            progress_bar.inc(0);
+            progress_bar.force_draw();
 
             // check to see if hashset is getting too big and remove some if necessary
             remove_brackets(&mut unique_brackets, &mut repeated_brackets);
@@ -272,7 +273,7 @@ fn generate_brackets(num_of_brackets: usize, method: &ProbabilityMethod) {
             // create a new file (if there are more brackets to create)
             if i < num_of_brackets {
                 progress_bar.set_message(format!("creating new file"));
-                progress_bar.inc(0);
+                progress_bar.force_draw();
 
                 f = OpenOptions::new()
                     .create(true)
@@ -284,7 +285,7 @@ fn generate_brackets(num_of_brackets: usize, method: &ProbabilityMethod) {
             }
 
             progress_bar.set_message(format!("{} repeats", repeated_brackets.len()));
-            progress_bar.inc(0);
+            progress_bar.force_draw();
         }
     }
 
@@ -294,16 +295,18 @@ fn generate_brackets(num_of_brackets: usize, method: &ProbabilityMethod) {
 
 fn remove_brackets(unique_brackets: &mut HashSet<u64>, repeated_brackets: &mut HashSet<u64>) {
     if unique_brackets.len() * 8 > UNIQUE_BRACKETS_MAX_SIZE {
-        let target_size = (UNIQUE_BRACKETS_MAX_SIZE >> 1) + (UNIQUE_BRACKETS_MAX_SIZE >> 2);
-        let current_size_bytes = unique_brackets.len() * 8;
-        let need_to_remove = (current_size_bytes - target_size) / 8;
-        
+        let target_size: usize = (UNIQUE_BRACKETS_MAX_SIZE >> 1) + (UNIQUE_BRACKETS_MAX_SIZE >> 2);
+        let current_size_bytes: usize = unique_brackets.len() * 8;
+        let need_to_remove: usize = (current_size_bytes - target_size) / 8 + repeated_brackets.len();
+
         let mut removed = 0;
         let to_keep: HashSet<u64> = unique_brackets
             .drain()
             .filter(|b| {
-                if removed >= need_to_remove || // have already removed enough
-                    repeated_brackets.contains(b) { // or it's aready been repeated
+                if removed >= need_to_remove {
+                    true // keep this one - we've removed enough
+                } else if repeated_brackets.contains(b) {
+                    removed += 1; // count it as removed (space reserved) but keep it
                     true // keep this one
                 } else {
                     removed += 1;
