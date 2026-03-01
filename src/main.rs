@@ -230,7 +230,7 @@ fn generate_brackets(num_of_brackets: usize, method: &ProbabilityMethod) {
         .progress_chars("##-");
     let progress_bar: ProgressBar = m.add(ProgressBar::new(num_of_brackets as u64));
     progress_bar.set_style(sty.clone());
-    progress_bar.set_message("initializing");
+    progress_bar.set_message("generating");
 
     // open a file
     let mut f: fs::File = OpenOptions::new()
@@ -263,11 +263,14 @@ fn generate_brackets(num_of_brackets: usize, method: &ProbabilityMethod) {
             file_count = 0;
             file_number += 1;
 
+            progress_bar.set_message(format!("optimizing cache"));
+
             // check to see if hashset is getting too big and remove some if necessary
             remove_brackets(&mut unique_brackets, &mut repeated_brackets);
 
             // create a new file (if there are more brackets to create)
             if i < num_of_brackets {
+                progress_bar.set_message(format!("creating new file"));
                 f = OpenOptions::new()
                     .create(true)
                     .write(true)
@@ -276,6 +279,8 @@ fn generate_brackets(num_of_brackets: usize, method: &ProbabilityMethod) {
                     .unwrap();
                 writer = BufWriter::with_capacity(FILE_READ_WRITE_BUFFER_SIZE, f);
             }
+
+            progress_bar.set_message(format!("{} repeats", repeated_brackets.len()));
         }
     }
 
@@ -284,27 +289,26 @@ fn generate_brackets(num_of_brackets: usize, method: &ProbabilityMethod) {
 }
 
 fn remove_brackets(unique_brackets: &mut HashSet<u64>, repeated_brackets: &mut HashSet<u64>) {
-    // check to see if there's enough room to add the next bracket
     if unique_brackets.len() * 8 > UNIQUE_BRACKETS_MAX_SIZE {
-        // no room - start removing non-repeated brackets until below a certain threshold
-
-        loop {
-            let b_opt: Option<&u64> = unique_brackets.iter().next();
-
-            if b_opt.is_some() {
-                let b: u64 = *b_opt.unwrap();
-                if !repeated_brackets.contains(&b) {
-                    unique_brackets.remove(&b);
+        let target_size = (UNIQUE_BRACKETS_MAX_SIZE >> 1) + (UNIQUE_BRACKETS_MAX_SIZE >> 2);
+        let current_size_bytes = unique_brackets.len() * 8;
+        let need_to_remove = (current_size_bytes - target_size) / 8;
+        
+        let mut removed = 0;
+        let to_keep: HashSet<u64> = unique_brackets
+            .drain()
+            .filter(|b| {
+                if removed >= need_to_remove || // have already removed enough
+                    repeated_brackets.contains(b) { // or it's aready been repeated
+                    true // keep this one
+                } else {
+                    removed += 1;
+                    false // remove this one
                 }
-
-                if unique_brackets.len() * 8 > ((UNIQUE_BRACKETS_MAX_SIZE >> 1) + (UNIQUE_BRACKETS_MAX_SIZE >> 2)) {
-                    // only clear out 25% of the unique brackets
-                    break;
-                }
-            } else {
-                break;
-            }
-        }
+            })
+            .collect();
+        
+        *unique_brackets = to_keep;
     }
 }
 
