@@ -264,6 +264,7 @@ fn generate_brackets(num_of_brackets: usize, method: &ProbabilityMethod) {
             file_number += 1;
 
             progress_bar.set_message(format!("optimizing cache"));
+            progress_bar.inc(0);
 
             // check to see if hashset is getting too big and remove some if necessary
             remove_brackets(&mut unique_brackets, &mut repeated_brackets);
@@ -271,6 +272,8 @@ fn generate_brackets(num_of_brackets: usize, method: &ProbabilityMethod) {
             // create a new file (if there are more brackets to create)
             if i < num_of_brackets {
                 progress_bar.set_message(format!("creating new file"));
+                progress_bar.inc(0);
+
                 f = OpenOptions::new()
                     .create(true)
                     .write(true)
@@ -281,6 +284,7 @@ fn generate_brackets(num_of_brackets: usize, method: &ProbabilityMethod) {
             }
 
             progress_bar.set_message(format!("{} repeats", repeated_brackets.len()));
+            progress_bar.inc(0);
         }
     }
 
