@@ -217,9 +217,8 @@ fn decode_and_score(bracket: &[u8; 8], winning_bracket: &[u8; 63], decoded_brack
 
 fn generate_brackets(num_of_brackets: usize, method: &ProbabilityMethod) {
     let mut unique_brackets: HashSet<u64> = HashSet::with_capacity(num_of_brackets / BRACKET_RESOLUTION);
-    let mut repeated_brackets: HashSet<u64> = HashSet::new();
     let mut i: usize = 0;
-    //let mut repeated_brackets: usize = 0;
+    let mut repeated_brackets: HashSet<u64> = HashSet::new();
     let mut file_number: usize = 0;
     let mut file_count: usize = 0;
 
@@ -287,7 +286,7 @@ fn generate_brackets(num_of_brackets: usize, method: &ProbabilityMethod) {
 fn remove_brackets(unique_brackets: &mut HashSet<u64>, repeated_brackets: &mut HashSet<u64>) {
     // check to see if there's enough room to add the next bracket
     if unique_brackets.len() * 8 > UNIQUE_BRACKETS_MAX_SIZE {
-        // start removing unrepeated brackets until below a certain threshold
+        // no room - start removing non-repeated brackets until below a certain threshold
 
         loop {
             let b_opt: Option<&u64> = unique_brackets.iter().next();
