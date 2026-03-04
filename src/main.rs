@@ -599,4 +599,73 @@ mod tests {
         println!();
 
     }
+
+    #[test]
+    fn test_bracket_generation() {
+        let distribution: Normal<f64> = Normal::new(0.0, TEAMS_SCORE_STDEV).unwrap();
+        let mut bracket: [u8; 63] = [0; 63];
+        
+        generate_bracket(&mut bracket, &distribution);
+        
+        // Verify round 1: Each winner should be one of the two starting teams
+        for game_idx in 0..32 {
+            let winner: u8 = bracket[game_idx];
+            let team1: u8 = STARTING_BRACKET[2 * game_idx];
+            let team2: u8 = STARTING_BRACKET[2 * game_idx + 1];
+            
+            assert!(winner == team1 || winner == team2,
+                "Round 1 game {} winner {} must be either {} or {}",
+                game_idx, winner, team1, team2);
+        }
+        
+        // Verify rounds 2-6: Each winner should be one of the two previous round winners
+        let mut round_start: usize = 32;
+        let mut round_size: usize = 16;
+        let mut prev_round_start: usize = 0;
+        
+        for round in 2..=6 {
+            for game_idx in 0..round_size {
+                let winner: u8 = bracket[round_start + game_idx];
+                let team1: u8 = bracket[prev_round_start + 2 * game_idx];
+                let team2: u8 = bracket[prev_round_start + 2 * game_idx + 1];
+                
+                assert!(winner == team1 || winner == team2,
+                    "Round {} game {} winner {} must be either {} or {}",
+                    round, game_idx, winner, team1, team2);
+            }
+            
+            prev_round_start = round_start;
+            round_start += round_size;
+            round_size /= 2;
+        }
+    }
+
+    #[test]
+    fn test_bracket_generation_sanitycheck() {
+        let distribution: Normal<f64> = Normal::new(0.0, TEAMS_SCORE_STDEV).unwrap();
+        let num_brackets: i32 = 1000;
+        
+        // Track wins for each seed (1-16), using indices 0-15
+        let mut seed_wins: [usize; 16] = [0; 16];
+        
+        for _ in 0..num_brackets {
+            let mut bracket: [u8; 63] = [0; 63];
+            generate_bracket(&mut bracket, &distribution);
+            
+            // Count wins for each seed in this bracket
+            for winner_team in bracket.iter() {
+                let seed: usize = (*winner_team % 16) as usize;
+                // Convert seed 0 (which is 16) to index 15, otherwise seed X to index X-1
+                let seed_index: usize = if seed == 0 { 15 } else { seed - 1 };
+                seed_wins[seed_index] += 1;
+            }
+        }
+        
+        // Verify that lower seed numbers (better seeds) win more often than higher seed numbers (worse seeds)
+        for seed_index in 0..15 {
+            assert!(seed_wins[seed_index] > seed_wins[seed_index + 1],
+                "Seed {} should win more often ({} total wins) than seed {} ({} total wins)",
+                seed_index + 1, seed_wins[seed_index], seed_index + 2, seed_wins[seed_index + 1]);
+        }
+    }
 }
