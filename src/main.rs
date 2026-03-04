@@ -38,17 +38,11 @@ const STARTING_BRACKET: [u8; 64] = [
     33, 48, 40, 41, 37, 44, 36, 45, 38, 43, 35, 46, 39, 42, 34, 47, // south
     49, 64, 56, 57, 53, 60, 52, 61, 54, 59, 51, 62, 55, 58, 50, 63, // midwest
 ];
+const SEED1_MEAN_SCORE: f64 = 85.0;
+const TEAMS_SCORE_STDEV: f64 = 10.0;
 
-
-fn get_round_winners(teams: &mut [u8; 64], rng: &mut rand::prelude::ThreadRng, teams_len: u8) {
-    let mut distributions: [Normal<f64>; 16] = [Normal::new(0.0, 1.0).unwrap(); 16];
+fn get_round_winners(teams: &mut [u8; 64], rng: &mut rand::prelude::ThreadRng, teams_len: u8, distribution: &Normal<f64>) {
     let mut winning_teams: [u8; 64] = [0; 64];
-
-    let mut mean: f64 = 85.0;
-    for i in 0..16 as usize {
-        distributions[i] = Normal::new(mean, 10.0).unwrap();
-        mean -= 1.0;
-    }
 
     for i in (0..teams_len as usize).step_by(2) {
         let mut left_seed: usize = (teams[i] % 16) as usize;
@@ -62,10 +56,11 @@ fn get_round_winners(teams: &mut [u8; 64], rng: &mut rand::prelude::ThreadRng, t
             right_seed = 16;
         }
 
+        let left_mean: f64 = SEED1_MEAN_SCORE - (left_seed - 1) as f64;
+        let right_mean: f64 = SEED1_MEAN_SCORE - (right_seed - 1) as f64;
 
-
-        let left_seed_points: f64 = distributions[left_seed-1].sample(rng);
-        let right_seed_points: f64 = distributions[right_seed-1].sample(rng);
+        let left_seed_points: f64 = left_mean + distribution.sample(rng);
+        let right_seed_points: f64 = right_mean + distribution.sample(rng);
 
         if left_seed_points > right_seed_points {
             // left seed scored more points in the game
@@ -104,7 +99,7 @@ fn get_human_readable_bracket(bracket: &[u8; 63]) -> String {
 }
 
 
-fn generate_bracket(bracket: &mut [u8; 63]) {
+fn generate_bracket(bracket: &mut [u8; 63], distribution: &Normal<f64>) {
     // initialize the starting bracket
     let mut teams: [u8; 64] = [
         1,  16,  8,  9,  5, 12,  4, 13,  6, 11,  3, 14,  7, 10,  2, 15, // east
@@ -117,7 +112,7 @@ fn generate_bracket(bracket: &mut [u8; 63]) {
     let mut index: usize = 0;
     let mut team_length: u8 = 64;
     while team_length > 1 {
-        get_round_winners(&mut teams, &mut rng, team_length);
+        get_round_winners(&mut teams, &mut rng, team_length, &distribution);
         team_length /= 2;
 
         for i in 0..team_length as usize {
@@ -199,6 +194,9 @@ fn generate_brackets(num_of_brackets: usize) {
     let mut file_number: usize = 0;
     let mut file_count: usize = 0;
 
+    // create single distribution with mean 0 and stdev 10
+    let distribution: Normal<f64> = Normal::new(0.0, TEAMS_SCORE_STDEV).unwrap();
+
     let m: MultiProgress = MultiProgress::new();
     let sty: ProgressStyle = ProgressStyle::with_template(
             "[{elapsed_precise}] {bar:40.cyan/blue} {pos:>12}/{len:12} ({eta_precise}) {msg}",
@@ -221,7 +219,7 @@ fn generate_brackets(num_of_brackets: usize) {
     progress_bar.force_draw();
     while i < num_of_brackets {
         let mut bracket: [u8; 63] = [0; 63];
-        generate_bracket(&mut bracket);
+        generate_bracket(&mut bracket, &distribution);
         let encoded_bracket: u64 = encode_to_bytes(&bracket);
 
         // only write to the file if it's a unique bracket (inserted into unique_brackets)
