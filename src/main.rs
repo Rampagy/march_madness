@@ -1,4 +1,3 @@
-use rand::prelude::*;
 use std::fs;
 use std::fs::{File, OpenOptions};
 use std::io::{prelude::*, BufReader, BufWriter, Write};
@@ -41,25 +40,14 @@ const STARTING_BRACKET: [u8; 64] = [
 ];
 
 
-#[derive(PartialEq)] 
-#[repr(u8)]
-#[allow(unused)]
-enum ProbabilityMethod {
-    Year2024 = 0,
-    Year2025 = 1,
-}
-
-
-fn get_round_winners(teams: &mut [u8; 64], rng: &mut rand::prelude::ThreadRng, method: &ProbabilityMethod, teams_len: u8) {
+fn get_round_winners(teams: &mut [u8; 64], rng: &mut rand::prelude::ThreadRng, teams_len: u8) {
     let mut distributions: [Normal<f64>; 16] = [Normal::new(0.0, 1.0).unwrap(); 16];
     let mut winning_teams: [u8; 64] = [0; 64];
 
-    if *method == ProbabilityMethod::Year2025 {
-        let mut mean: f64 = 85.0;
-        for i in 0..16 as usize {
-            distributions[i] = Normal::new(mean, 10.0).unwrap();
-            mean -= 1.0;
-        }
+    let mut mean: f64 = 85.0;
+    for i in 0..16 as usize {
+        distributions[i] = Normal::new(mean, 10.0).unwrap();
+        mean -= 1.0;
     }
 
     for i in (0..teams_len as usize).step_by(2) {
@@ -74,32 +62,17 @@ fn get_round_winners(teams: &mut [u8; 64], rng: &mut rand::prelude::ThreadRng, m
             right_seed = 16;
         }
 
-        match method {
-            ProbabilityMethod::Year2024 => {
-                let prob_left_seed_wins: f32 = right_seed as f32 / (right_seed as f32 + left_seed as f32);
 
-                // sample the population given the above weight/probability
-                let rand_num: u32 = rng.random::<u32>();
-                if (rand_num as f32) > (prob_left_seed_wins * (u32::MAX as f32)) {
-                    // right seed wins
-                    winning_teams[(i/2) as usize] = teams[i+1];
-                } else {
-                    // left seed wins
-                    winning_teams[(i/2) as usize] = teams[i];
-                }
-            },
-            ProbabilityMethod::Year2025 => {
-                let left_seed_points: f64 = distributions[left_seed-1].sample(rng);
-                let right_seed_points: f64 = distributions[right_seed-1].sample(rng);
 
-                if left_seed_points > right_seed_points {
-                    // left seed scored more points in the game
-                    winning_teams[i/2] = teams[i];
-                } else {
-                    // right seed scored more points in the game
-                    winning_teams[i/2] = teams[i+1];
-                }
-            },
+        let left_seed_points: f64 = distributions[left_seed-1].sample(rng);
+        let right_seed_points: f64 = distributions[right_seed-1].sample(rng);
+
+        if left_seed_points > right_seed_points {
+            // left seed scored more points in the game
+            winning_teams[i/2] = teams[i];
+        } else {
+            // right seed scored more points in the game
+            winning_teams[i/2] = teams[i+1];
         }
     }
 
@@ -131,7 +104,7 @@ fn get_human_readable_bracket(bracket: &[u8; 63]) -> String {
 }
 
 
-fn generate_bracket(bracket: &mut [u8; 63], method: &ProbabilityMethod) {
+fn generate_bracket(bracket: &mut [u8; 63]) {
     // initialize the starting bracket
     let mut teams: [u8; 64] = [
         1,  16,  8,  9,  5, 12,  4, 13,  6, 11,  3, 14,  7, 10,  2, 15, // east
@@ -144,7 +117,7 @@ fn generate_bracket(bracket: &mut [u8; 63], method: &ProbabilityMethod) {
     let mut index: usize = 0;
     let mut team_length: u8 = 64;
     while team_length > 1 {
-        get_round_winners(&mut teams, &mut rng, &method, team_length);
+        get_round_winners(&mut teams, &mut rng, team_length);
         team_length /= 2;
 
         for i in 0..team_length as usize {
@@ -219,7 +192,7 @@ fn decode_and_score(bracket: &[u8; 8], winning_bracket: &[u8; 63], decoded_brack
 }
 
 
-fn generate_brackets(num_of_brackets: usize, method: &ProbabilityMethod) {
+fn generate_brackets(num_of_brackets: usize) {
     let mut unique_brackets: HashSet<u64> = HashSet::with_capacity(num_of_brackets / BRACKET_RESOLUTION);
     let mut i: usize = 0;
     let mut repeated_brackets: HashSet<u64> = HashSet::new();
@@ -248,7 +221,7 @@ fn generate_brackets(num_of_brackets: usize, method: &ProbabilityMethod) {
     progress_bar.force_draw();
     while i < num_of_brackets {
         let mut bracket: [u8; 63] = [0; 63];
-        generate_bracket(&mut bracket, &method);
+        generate_bracket(&mut bracket);
         let encoded_bracket: u64 = encode_to_bytes(&bracket);
 
         // only write to the file if it's a unique bracket (inserted into unique_brackets)
@@ -515,10 +488,9 @@ fn main() {
     if args.generate {
         // number is entered in millions (2 is interpreted as 2_000_000)
         let num_brackets: usize = args.count * BRACKET_RESOLUTION;
-        let method: ProbabilityMethod = ProbabilityMethod::Year2025;
 
         if num_brackets > 0 {
-            generate_brackets(num_brackets, &method);
+            generate_brackets(num_brackets);
         } else {
             println!("Invalid number of brackets to generate: {}", args.count);
         }
