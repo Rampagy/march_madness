@@ -241,6 +241,12 @@ fn generate_brackets(num_of_brackets: usize) {
             file_count = 0;
             file_number += 1;
 
+            progress_bar.set_message(format!("closing file"));
+            progress_bar.force_draw();
+
+            // force write of any remaining bytes to the file
+            writer.flush().expect("unable to write to file");
+
             progress_bar.set_message(format!("optimizing cache"));
             progress_bar.force_draw();
 
@@ -265,6 +271,9 @@ fn generate_brackets(num_of_brackets: usize) {
             progress_bar.force_draw();
         }
     }
+
+    // force write of any remaining bytes to the file
+    writer.flush().expect("unable to write to file");
 
     progress_bar.finish();
     println!("Bracket generation complete!");
