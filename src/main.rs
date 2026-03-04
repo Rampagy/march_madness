@@ -188,7 +188,7 @@ fn decode_and_score(bracket: &[u8; 8], winning_bracket: &[u8; 63], decoded_brack
 
 
 fn generate_brackets(num_of_brackets: usize) {
-    let mut unique_brackets: HashSet<u64> = HashSet::with_capacity(num_of_brackets / BRACKET_RESOLUTION);
+    let mut unique_brackets: HashSet<u64> = HashSet::with_capacity((UNIQUE_BRACKETS_MAX_SIZE / 8).min(num_of_brackets) + 100); // convert from bytes to brackets and add a small buffer
     let mut i: usize = 0;
     let mut repeated_brackets: HashSet<u64> = HashSet::new();
     let mut file_number: usize = 0;
