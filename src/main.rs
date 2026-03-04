@@ -50,9 +50,9 @@ enum ProbabilityMethod {
 }
 
 
-fn get_round_winners(teams: &Vec<u8>, rng: &mut rand::prelude::ThreadRng, method: &ProbabilityMethod) -> Vec<u8> {
-    let mut winning_teams: Vec<u8> = Vec::with_capacity(teams.len() / 2);
+fn get_round_winners(teams: &mut [u8; 64], rng: &mut rand::prelude::ThreadRng, method: &ProbabilityMethod, teams_len: u8) {
     let mut distributions: [Normal<f64>; 16] = [Normal::new(0.0, 1.0).unwrap(); 16];
+    let mut winning_teams: [u8; 64] = [0; 64];
 
     if *method == ProbabilityMethod::Year2025 {
         let mut mean: f64 = 85.0;
@@ -62,7 +62,7 @@ fn get_round_winners(teams: &Vec<u8>, rng: &mut rand::prelude::ThreadRng, method
         }
     }
 
-    for i in (0..teams.len()).step_by(2) {
+    for i in (0..teams_len as usize).step_by(2) {
         let mut left_seed: usize = (teams[i] % 16) as usize;
         let mut right_seed: usize = (teams[i+1] % 16) as usize;
 
@@ -82,10 +82,10 @@ fn get_round_winners(teams: &Vec<u8>, rng: &mut rand::prelude::ThreadRng, method
                 let rand_num: u32 = rng.random::<u32>();
                 if (rand_num as f32) > (prob_left_seed_wins * (u32::MAX as f32)) {
                     // right seed wins
-                    let _ = winning_teams.push(teams[i+1]);
+                    winning_teams[(i/2) as usize] = teams[i+1];
                 } else {
                     // left seed wins
-                    let _ = winning_teams.push(teams[i]);
+                    winning_teams[(i/2) as usize] = teams[i];
                 }
             },
             ProbabilityMethod::Year2025 => {
@@ -94,16 +94,18 @@ fn get_round_winners(teams: &Vec<u8>, rng: &mut rand::prelude::ThreadRng, method
 
                 if left_seed_points > right_seed_points {
                     // left seed scored more points in the game
-                    winning_teams.push(teams[i]);
+                    winning_teams[i/2] = teams[i];
                 } else {
                     // right seed scored more points in the game
-                    winning_teams.push(teams[i+1]);
+                    winning_teams[i/2] = teams[i+1];
                 }
             },
         }
     }
 
-    return winning_teams;
+    for i in 0..teams_len as usize {
+        teams[i] = winning_teams[i];
+    }
 }
 
 
@@ -131,7 +133,7 @@ fn get_human_readable_bracket(bracket: &[u8; 63]) -> String {
 
 fn generate_bracket(bracket: &mut [u8; 63], method: &ProbabilityMethod) {
     // initialize the starting bracket
-    let mut teams: Vec<u8> = vec![
+    let mut teams: [u8; 64] = [
         1,  16,  8,  9,  5, 12,  4, 13,  6, 11,  3, 14,  7, 10,  2, 15, // east
         17, 32, 24, 25, 21, 28, 20, 29, 22, 27, 19, 30, 23, 26, 18, 31, // west
         33, 48, 40, 41, 37, 44, 36, 45, 38, 43, 35, 46, 39, 42, 34, 47, // south
@@ -140,11 +142,13 @@ fn generate_bracket(bracket: &mut [u8; 63], method: &ProbabilityMethod) {
 
     let mut rng: rand::prelude::ThreadRng = rand::rng();
     let mut index: usize = 0;
-    while (&teams).len() > 1 {
-        teams = get_round_winners(&teams, &mut rng, &method);
+    let mut team_length: u8 = 64;
+    while team_length > 1 {
+        get_round_winners(&mut teams, &mut rng, &method, team_length);
+        team_length /= 2;
 
-        for team in &teams {
-            bracket[index] = *team;
+        for i in 0..team_length as usize {
+            bracket[index] = teams[i];
             index += 1;
         }
     }
