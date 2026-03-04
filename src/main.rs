@@ -31,7 +31,7 @@ const CREATE_NEW_FILE_BRACKET_THRESHOLD: usize = 120_000_000; // after so many b
 const FILE_NAME: &str = "brackets";
 const WINNING_BRACKET_FILE_NAME: &str = "winning_bracket.txt";
 const BRACKET_RESOLUTION: usize = 1_000_000; // minimum number (and step) of brackets
-const FILE_READ_WRITE_BUFFER_SIZE: usize = 1024*1024*1024; // 100 mibibytes
+const FILE_READ_WRITE_BUFFER_SIZE: usize = 8*1024*1024; // 8 mibibytes
 const STARTING_BRACKET: [u8; 64] = [
     1,  16,  8,  9,  5, 12,  4, 13,  6, 11,  3, 14,  7, 10,  2, 15, // east
     17, 32, 24, 25, 21, 28, 20, 29, 22, 27, 19, 30, 23, 26, 18, 31, // west
