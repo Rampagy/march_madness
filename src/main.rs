@@ -26,12 +26,12 @@ struct Args {
     count: usize,
 }
 
-const UNIQUE_BRACKETS_MAX_SIZE: usize = 64*1024*1024*1024; // 64 gibibytes
+const UNIQUE_BRACKETS_MAX_SIZE: usize = 64*1024*1024*1024; // 64 or 32 gibibytes?
 const CREATE_NEW_FILE_BRACKET_THRESHOLD: usize = 120_000_000; // after so many brackets start a new file
 const FILE_NAME: &str = "brackets";
 const WINNING_BRACKET_FILE_NAME: &str = "winning_bracket.txt";
 const BRACKET_RESOLUTION: usize = 1_000_000; // minimum number (and step) of brackets
-const FILE_READ_WRITE_BUFFER_SIZE: usize = 8*1024*1024; // 8 mibibytes
+const FILE_READ_WRITE_BUFFER_SIZE: usize = 8*1024*1024; // 8 mebibytes
 const STARTING_BRACKET: [u8; 64] = [
     1,  16,  8,  9,  5, 12,  4, 13,  6, 11,  3, 14,  7, 10,  2, 15, // east
     17, 32, 24, 25, 21, 28, 20, 29, 22, 27, 19, 30, 23, 26, 18, 31, // west
@@ -188,11 +188,22 @@ fn decode_and_score(bracket: &[u8; 8], winning_bracket: &[u8; 63], decoded_brack
 
 
 fn generate_brackets(num_of_brackets: usize) {
-    let mut unique_brackets: HashSet<u64> = HashSet::with_capacity((UNIQUE_BRACKETS_MAX_SIZE / 8).min(num_of_brackets) + 2*CREATE_NEW_FILE_BRACKET_THRESHOLD); // convert from bytes to brackets and 2GB of buffer
+    let unique_brackets_limit: usize = (UNIQUE_BRACKETS_MAX_SIZE / 8).min(num_of_brackets) + 2*CREATE_NEW_FILE_BRACKET_THRESHOLD; // convert from bytes to brackets and 2GB of buffer 
+    let mut unique_brackets: HashSet<u64> = HashSet::with_capacity(unique_brackets_limit);  // this function is only guaranteed to give you at least this much, but it could give you more (so much more it uses all your memory...)
     let mut i: usize = 0;
     let mut repeated_brackets: HashSet<u64> = HashSet::new();
     let mut file_number: usize = 0;
     let mut file_count: usize = 0;
+
+    // check to see if hashset overallocated, if so reduce until it's below the max limit
+    let mut attempted_new_capacity: usize = unique_brackets_limit;
+    println!("attempted bracket capacity: {}, got bracket capacity: {}", attempted_new_capacity, unique_brackets.capacity());
+    while unique_brackets.capacity() > unique_brackets_limit {
+        // try shrinking the capacity
+        attempted_new_capacity = (attempted_new_capacity as f64 * 0.9) as usize;
+        unique_brackets.shrink_to(attempted_new_capacity);
+        println!("attempted bracket capacity: {}, got bracket capacity: {}", attempted_new_capacity, unique_brackets.capacity());
+    }
 
     // create single distribution with mean 0 and stdev 10
     let distribution: Normal<f64> = Normal::new(0.0, TEAMS_SCORE_STDEV).unwrap();
@@ -278,10 +289,9 @@ fn generate_brackets(num_of_brackets: usize) {
 }
 
 fn remove_brackets(unique_brackets: &mut HashSet<u64>, repeated_brackets: &mut HashSet<u64>) {
-    if unique_brackets.len() * 8 > UNIQUE_BRACKETS_MAX_SIZE {
-        let target_size: usize = (UNIQUE_BRACKETS_MAX_SIZE >> 1) + (UNIQUE_BRACKETS_MAX_SIZE >> 2);
-        let current_size_bytes: usize = unique_brackets.len() * 8;
-        let need_to_remove: usize = (current_size_bytes - target_size) / 8 + repeated_brackets.len();
+    if (unique_brackets.capacity()>>1) + (unique_brackets.capacity()>>2) < unique_brackets.len() { // when it gets to 75% full or more
+        let target_size: usize = (unique_brackets.capacity()>>1) + (unique_brackets.capacity()>>3); // clear it down to at least 62.5%
+        let need_to_remove: usize = (unique_brackets.len() - target_size) + repeated_brackets.len();
 
         let mut removed = 0;
         let to_keep: HashSet<u64> = unique_brackets
