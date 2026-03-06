@@ -1,4 +1,3 @@
-use rand::Rng;
 use std::fs;
 use std::fs::{File, OpenOptions};
 use std::io::{prelude::*, BufReader, BufWriter, Write};
@@ -27,42 +26,25 @@ struct Args {
     count: usize,
 }
 
-
+const UNIQUE_BRACKETS_MAX_SIZE: usize = 64*1024*1024*1024; // 64 or 32 gibibytes?
 const CREATE_NEW_FILE_BRACKET_THRESHOLD: usize = 120_000_000; // after so many brackets start a new file
 const FILE_NAME: &str = "brackets";
 const WINNING_BRACKET_FILE_NAME: &str = "winning_bracket.txt";
 const BRACKET_RESOLUTION: usize = 1_000_000; // minimum number (and step) of brackets
-const FILE_READ_WRITE_BUFFER_SIZE: usize = 104_857_600; // 100 MB
+const FILE_READ_WRITE_BUFFER_SIZE: usize = 8*1024*1024; // 8 mebibytes
 const STARTING_BRACKET: [u8; 64] = [
     1,  16,  8,  9,  5, 12,  4, 13,  6, 11,  3, 14,  7, 10,  2, 15, // east
     17, 32, 24, 25, 21, 28, 20, 29, 22, 27, 19, 30, 23, 26, 18, 31, // west
     33, 48, 40, 41, 37, 44, 36, 45, 38, 43, 35, 46, 39, 42, 34, 47, // south
     49, 64, 56, 57, 53, 60, 52, 61, 54, 59, 51, 62, 55, 58, 50, 63, // midwest
 ];
+const SEED1_MEAN_SCORE: f64 = 85.0;
+const TEAMS_SCORE_STDEV: f64 = 10.0;
 
+fn get_round_winners(teams: &mut [u8; 64], rng: &mut rand::prelude::ThreadRng, teams_len: u8, distribution: &Normal<f64>) {
+    let mut winning_teams: [u8; 64] = [0; 64];
 
-#[derive(PartialEq)] 
-#[repr(u8)]
-#[allow(unused)]
-enum ProbabilityMethod {
-    Year2024 = 0,
-    Year2025 = 1,
-}
-
-
-fn get_round_winners(teams: &Vec<u8>, rng: &mut rand::prelude::ThreadRng, method: &ProbabilityMethod) -> Vec<u8> {
-    let mut winning_teams: Vec<u8> = Vec::with_capacity(teams.len() / 2);
-    let mut distributions: [Normal<f64>; 16] = [Normal::new(0.0, 1.0).unwrap(); 16];
-
-    if *method == ProbabilityMethod::Year2025 {
-        let mut mean: f64 = 85.0;
-        for i in 0..16 as usize {
-            distributions[i] = Normal::new(mean, 10.0).unwrap();
-            mean -= 1.0;
-        }
-    }
-
-    for i in (0..teams.len()).step_by(2) {
+    for i in (0..teams_len as usize).step_by(2) {
         let mut left_seed: usize = (teams[i] % 16) as usize;
         let mut right_seed: usize = (teams[i+1] % 16) as usize;
 
@@ -74,36 +56,24 @@ fn get_round_winners(teams: &Vec<u8>, rng: &mut rand::prelude::ThreadRng, method
             right_seed = 16;
         }
 
-        match method {
-            ProbabilityMethod::Year2024 => {
-                let prob_left_seed_wins: f32 = right_seed as f32 / (right_seed as f32 + left_seed as f32);
+        let left_mean: f64 = SEED1_MEAN_SCORE - (left_seed - 1) as f64;
+        let right_mean: f64 = SEED1_MEAN_SCORE - (right_seed - 1) as f64;
 
-                // sample the population given the above weight/probability
-                let rand_num: u32 = rng.random::<u32>();
-                if (rand_num as f32) > (prob_left_seed_wins * (u32::MAX as f32)) {
-                    // right seed wins
-                    let _ = winning_teams.push(teams[i+1]);
-                } else {
-                    // left seed wins
-                    let _ = winning_teams.push(teams[i]);
-                }
-            },
-            ProbabilityMethod::Year2025 => {
-                let left_seed_points: f64 = distributions[left_seed-1].sample(rng);
-                let right_seed_points: f64 = distributions[right_seed-1].sample(rng);
+        let left_seed_points: f64 = left_mean + distribution.sample(rng);
+        let right_seed_points: f64 = right_mean + distribution.sample(rng);
 
-                if left_seed_points > right_seed_points {
-                    // left seed scored more points in the game
-                    winning_teams.push(teams[i]);
-                } else {
-                    // right seed scored more points in the game
-                    winning_teams.push(teams[i+1]);
-                }
-            },
+        if left_seed_points > right_seed_points {
+            // left seed scored more points in the game
+            winning_teams[i/2] = teams[i];
+        } else {
+            // right seed scored more points in the game
+            winning_teams[i/2] = teams[i+1];
         }
     }
 
-    return winning_teams;
+    for i in 0..teams_len as usize {
+        teams[i] = winning_teams[i];
+    }
 }
 
 
@@ -129,9 +99,9 @@ fn get_human_readable_bracket(bracket: &[u8; 63]) -> String {
 }
 
 
-fn generate_bracket(bracket: &mut [u8; 63], method: &ProbabilityMethod) {
+fn generate_bracket(bracket: &mut [u8; 63], distribution: &Normal<f64>) {
     // initialize the starting bracket
-    let mut teams: Vec<u8> = vec![
+    let mut teams: [u8; 64] = [
         1,  16,  8,  9,  5, 12,  4, 13,  6, 11,  3, 14,  7, 10,  2, 15, // east
         17, 32, 24, 25, 21, 28, 20, 29, 22, 27, 19, 30, 23, 26, 18, 31, // west
         33, 48, 40, 41, 37, 44, 36, 45, 38, 43, 35, 46, 39, 42, 34, 47, // south
@@ -140,18 +110,20 @@ fn generate_bracket(bracket: &mut [u8; 63], method: &ProbabilityMethod) {
 
     let mut rng: rand::prelude::ThreadRng = rand::rng();
     let mut index: usize = 0;
-    while (&teams).len() > 1 {
-        teams = get_round_winners(&teams, &mut rng, &method);
+    let mut team_length: u8 = 64;
+    while team_length > 1 {
+        get_round_winners(&mut teams, &mut rng, team_length, &distribution);
+        team_length /= 2;
 
-        for team in &teams {
-            bracket[index] = *team;
+        for i in 0..team_length as usize {
+            bracket[index] = teams[i];
             index += 1;
         }
     }
 }
 
 
-fn encode_to_bytes(bracket: &[u8; 63]) -> [u8; 8] {
+fn encode_to_bytes(bracket: &[u8; 63]) -> u64 {
     let mut encoded_bracket: u64 = 0;
 
     for (idx, top_team) in bracket.into_iter().enumerate() {
@@ -172,7 +144,7 @@ fn encode_to_bytes(bracket: &[u8; 63]) -> [u8; 8] {
     }
 
     // left justify the 63 bits
-    return (encoded_bracket << 1).to_be_bytes();
+    return encoded_bracket << 1;
 }
 
 
@@ -215,12 +187,26 @@ fn decode_and_score(bracket: &[u8; 8], winning_bracket: &[u8; 63], decoded_brack
 }
 
 
-fn generate_brackets(num_of_brackets: usize, method: &ProbabilityMethod) {
-    let mut unique_brackets: HashSet<[u8; 8]> = HashSet::with_capacity(num_of_brackets / BRACKET_RESOLUTION);
+fn generate_brackets(num_of_brackets: usize) {
+    let unique_brackets_limit: usize = (UNIQUE_BRACKETS_MAX_SIZE / 8).min(num_of_brackets) + 2*CREATE_NEW_FILE_BRACKET_THRESHOLD; // convert from bytes to brackets and 2GB of buffer 
+    let mut unique_brackets: HashSet<u64> = HashSet::with_capacity(unique_brackets_limit);  // this function is only guaranteed to give you at least this much, but it could give you more (so much more it uses all your memory...)
     let mut i: usize = 0;
-    let mut repeated_brackets: usize = 0;
+    let mut repeated_brackets: HashSet<u64> = HashSet::new();
     let mut file_number: usize = 0;
     let mut file_count: usize = 0;
+
+    // check to see if hashset overallocated, if so reduce until it's below the max limit
+    let mut attempted_new_capacity: usize = unique_brackets_limit;
+    println!("attempted bracket capacity: {}, got bracket capacity: {}", attempted_new_capacity, unique_brackets.capacity());
+    while unique_brackets.capacity() > unique_brackets_limit {
+        // try shrinking the capacity
+        attempted_new_capacity = (attempted_new_capacity as f64 * 0.9) as usize;
+        unique_brackets.shrink_to(attempted_new_capacity);
+        println!("attempted bracket capacity: {}, got bracket capacity: {}", attempted_new_capacity, unique_brackets.capacity());
+    }
+
+    // create single distribution with mean 0 and stdev 10
+    let distribution: Normal<f64> = Normal::new(0.0, TEAMS_SCORE_STDEV).unwrap();
 
     let m: MultiProgress = MultiProgress::new();
     let sty: ProgressStyle = ProgressStyle::with_template(
@@ -230,7 +216,7 @@ fn generate_brackets(num_of_brackets: usize, method: &ProbabilityMethod) {
         .progress_chars("##-");
     let progress_bar: ProgressBar = m.add(ProgressBar::new(num_of_brackets as u64));
     progress_bar.set_style(sty.clone());
-    progress_bar.set_message("initializing");
+    progress_bar.set_message("generating");
 
     // open a file
     let mut f: fs::File = OpenOptions::new()
@@ -241,30 +227,46 @@ fn generate_brackets(num_of_brackets: usize, method: &ProbabilityMethod) {
         .unwrap();
     let mut writer: BufWriter<File> = BufWriter::with_capacity(FILE_READ_WRITE_BUFFER_SIZE, f);
 
-    progress_bar.inc(0);
+    progress_bar.force_draw();
     while i < num_of_brackets {
         let mut bracket: [u8; 63] = [0; 63];
-        generate_bracket(&mut bracket, &method);
-        let encoded_bracket: [u8; 8] = encode_to_bytes(&bracket);
+        generate_bracket(&mut bracket, &distribution);
+        let encoded_bracket: u64 = encode_to_bytes(&bracket);
 
         // only write to the file if it's a unique bracket (inserted into unique_brackets)
         if unique_brackets.insert(encoded_bracket) {
-            let _ = writer.write(&encoded_bracket);
+            let _ = writer.write(&encoded_bracket.to_be_bytes());
 
             i += 1;
             file_count += 1;
             progress_bar.inc(1);
         } else {
-            repeated_brackets += 1;
-            progress_bar.set_message(format!("{} repeats", repeated_brackets));
+            repeated_brackets.insert(encoded_bracket);
+            progress_bar.set_message(format!("{} repeats", repeated_brackets.len()));
+            progress_bar.force_draw();
         }
 
         if file_count >= CREATE_NEW_FILE_BRACKET_THRESHOLD {
             file_count = 0;
             file_number += 1;
 
+            progress_bar.set_message(format!("closing file"));
+            progress_bar.force_draw();
+
+            // force write of any remaining bytes to the file
+            writer.flush().expect("unable to write to file");
+
+            progress_bar.set_message(format!("optimizing cache"));
+            progress_bar.force_draw();
+
+            // check to see if hashset is getting too big and remove some if necessary
+            remove_brackets(&mut unique_brackets, &mut repeated_brackets);
+
             // create a new file (if there are more brackets to create)
             if i < num_of_brackets {
+                progress_bar.set_message(format!("creating new file"));
+                progress_bar.force_draw();
+
                 f = OpenOptions::new()
                     .create(true)
                     .write(true)
@@ -273,11 +275,42 @@ fn generate_brackets(num_of_brackets: usize, method: &ProbabilityMethod) {
                     .unwrap();
                 writer = BufWriter::with_capacity(FILE_READ_WRITE_BUFFER_SIZE, f);
             }
+
+            progress_bar.set_message(format!("{} repeats", repeated_brackets.len()));
+            progress_bar.force_draw();
         }
     }
 
+    // force write of any remaining bytes to the file
+    writer.flush().expect("unable to write to file");
+
     progress_bar.finish();
     println!("Bracket generation complete!");
+}
+
+fn remove_brackets(unique_brackets: &mut HashSet<u64>, repeated_brackets: &mut HashSet<u64>) {
+    if (unique_brackets.capacity()>>1) + (unique_brackets.capacity()>>2) < unique_brackets.len() { // when it gets to 75% full or more
+        let target_size: usize = (unique_brackets.capacity()>>1) + (unique_brackets.capacity()>>3); // clear it down to at least 62.5%
+        let need_to_remove: usize = (unique_brackets.len() - target_size) + repeated_brackets.len();
+
+        let mut removed = 0;
+        let to_keep: HashSet<u64> = unique_brackets
+            .drain()
+            .filter(|b| {
+                if removed >= need_to_remove {
+                    true // keep this one - we've removed enough
+                } else if repeated_brackets.contains(b) {
+                    removed += 1; // count it as removed (space reserved) but keep it
+                    true // keep this one
+                } else {
+                    removed += 1;
+                    false // remove this one
+                }
+            })
+            .collect();
+        
+        *unique_brackets = to_keep;
+    }
 }
 
 
@@ -472,10 +505,9 @@ fn main() {
     if args.generate {
         // number is entered in millions (2 is interpreted as 2_000_000)
         let num_brackets: usize = args.count * BRACKET_RESOLUTION;
-        let method: ProbabilityMethod = ProbabilityMethod::Year2025;
 
         if num_brackets > 0 {
-            generate_brackets(num_brackets, &method);
+            generate_brackets(num_brackets);
         } else {
             println!("Invalid number of brackets to generate: {}", args.count);
         }
@@ -508,7 +540,7 @@ mod tests {
                                                                      33
         ];
 
-        let test_bracket_encoded: [u8; 8] = encode_to_bytes(&test_bracket);
+        let test_bracket_encoded: [u8; 8] = encode_to_bytes(&test_bracket).to_be_bytes();
 
         let answer: [u8; 8] = [12, 48, 114, 72, 7, 23, 85, 10];
         assert!(test_bracket_encoded.iter().eq(answer.iter()));
@@ -535,7 +567,7 @@ mod tests {
         let winning_bracket: &str = "0 8 5 4 11 14 7 2 17 24 28 29 22 19 23 18 33 41 44 45 38 35 42 34 49 57 53 52 59 51 55 50;1 0 11 7 17 29 19 18 33 44 38 34 49 52 51 50;1 7 0 18 33 34 49 50;1 17 33 0;17 0;0";
 
         let winning_bracket_encoded: [u8; 63] = parse_bracket(&winning_bracket.to_string());
-        let test_bracket_encoded: [u8; 8] = encode_to_bytes(&parse_bracket(&test_bracket.to_string()));
+        let test_bracket_encoded: [u8; 8] = encode_to_bytes(&parse_bracket(&test_bracket.to_string())).to_be_bytes();
         let mut test_bracket_decoded: [u8; 63] = [0; 63];
 
         // check scoring functionality
@@ -560,7 +592,7 @@ mod tests {
 
         let test_bracket: [u8; 63] = [1, 9, 5, 13, 6, 3, 10, 2, 17, 25, 21, 20, 22, 19, 26, 18, 33, 40, 37, 36, 38, 35, 42, 34, 49, 57, 53, 61, 54, 51, 55, 50, 1, 5, 6, 10, 17, 20, 19, 18, 40, 37, 35, 34, 49, 61, 51, 50, 5, 6, 17, 19, 40, 34, 49, 50, 5, 17, 34, 49, 17, 49, 17];
         let test_bracket_encoded1: [u8; 64] = encode_to_bytes_binary_version1(&test_bracket);
-        let test_bracket_encoded2: [u8; 8] = encode_to_bytes(&test_bracket);
+        let test_bracket_encoded2: [u8; 8] = encode_to_bytes(&test_bracket).to_be_bytes();
 
         for t in test_bracket {
             print!("{} ", t);
@@ -576,5 +608,74 @@ mod tests {
         }
         println!();
 
+    }
+
+    #[test]
+    fn test_bracket_generation() {
+        let distribution: Normal<f64> = Normal::new(0.0, TEAMS_SCORE_STDEV).unwrap();
+        let mut bracket: [u8; 63] = [0; 63];
+        
+        generate_bracket(&mut bracket, &distribution);
+        
+        // Verify round 1: Each winner should be one of the two starting teams
+        for game_idx in 0..32 {
+            let winner: u8 = bracket[game_idx];
+            let team1: u8 = STARTING_BRACKET[2 * game_idx];
+            let team2: u8 = STARTING_BRACKET[2 * game_idx + 1];
+            
+            assert!(winner == team1 || winner == team2,
+                "Round 1 game {} winner {} must be either {} or {}",
+                game_idx, winner, team1, team2);
+        }
+        
+        // Verify rounds 2-6: Each winner should be one of the two previous round winners
+        let mut round_start: usize = 32;
+        let mut round_size: usize = 16;
+        let mut prev_round_start: usize = 0;
+        
+        for round in 2..=6 {
+            for game_idx in 0..round_size {
+                let winner: u8 = bracket[round_start + game_idx];
+                let team1: u8 = bracket[prev_round_start + 2 * game_idx];
+                let team2: u8 = bracket[prev_round_start + 2 * game_idx + 1];
+                
+                assert!(winner == team1 || winner == team2,
+                    "Round {} game {} winner {} must be either {} or {}",
+                    round, game_idx, winner, team1, team2);
+            }
+            
+            prev_round_start = round_start;
+            round_start += round_size;
+            round_size /= 2;
+        }
+    }
+
+    #[test]
+    fn test_bracket_generation_sanitycheck() {
+        let distribution: Normal<f64> = Normal::new(0.0, TEAMS_SCORE_STDEV).unwrap();
+        let num_brackets: i32 = 1000;
+        
+        // Track wins for each seed (1-16), using indices 0-15
+        let mut seed_wins: [usize; 16] = [0; 16];
+        
+        for _ in 0..num_brackets {
+            let mut bracket: [u8; 63] = [0; 63];
+            generate_bracket(&mut bracket, &distribution);
+            
+            // Count wins for each seed in this bracket
+            for winner_team in bracket.iter() {
+                let seed: usize = (*winner_team % 16) as usize;
+                // Convert seed 0 (which is 16) to index 15, otherwise seed X to index X-1
+                let seed_index: usize = if seed == 0 { 15 } else { seed - 1 };
+                seed_wins[seed_index] += 1;
+            }
+        }
+        
+        // Verify that lower seed numbers (better seeds) win more often than higher seed numbers (worse seeds)
+        for seed_index in 0..15 {
+            assert!(seed_wins[seed_index] > seed_wins[seed_index + 1],
+                "Seed {} should win more often ({} total wins) than seed {} ({} total wins)",
+                seed_index + 1, seed_wins[seed_index], seed_index + 2, seed_wins[seed_index + 1]);
+        }
     }
 }
