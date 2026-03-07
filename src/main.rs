@@ -172,11 +172,10 @@ fn decode_and_score(bracket: &[u8; 8], winning_bracket: &[u8; 63], decoded_brack
             bit_count += 1;
             round_count += 1;
 
-            if round_count >= round_size {
-                round_size >>= 1; // divide by 2
-                round_score <<= 1; // multiply by 2
-                round_count = 0;
-            }
+            let should_advance = (round_count >= round_size) as u8;
+            round_count *= 1 - should_advance as usize;
+            round_size >>= should_advance;
+            round_score <<= should_advance;
         }
     }
 
