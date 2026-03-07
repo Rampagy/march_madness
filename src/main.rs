@@ -1,16 +1,13 @@
 use std::fs;
 use std::fs::{File, OpenOptions};
 use std::io::{prelude::*, BufReader, BufWriter, Write};
+use std::time::Instant;
 use std::collections::HashSet;
 use glob::glob;
 use rand_distr::{Normal, Distribution};
 use clap::Parser;
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
-
-#[cfg(target_os = "linux")]
-use std::os::unix::fs::MetadataExt;
-#[cfg(target_os = "windows")]
-use std::os::windows::fs::MetadataExt;
+use rayon::prelude::*;
 
 /// Generates and scores march madness brackets
 #[derive(Parser, Debug)]
@@ -404,12 +401,70 @@ fn print_results<'a, 'b>(perfect_brackets: usize, total_brackets: usize, bracket
 }
 
 
-fn score_brackets() {
-    let winning_bracket: [u8; 63];
-    let max_bracket_score: u8;
+// Structure to hold scoring results from a single file
+#[derive(Clone)]
+struct FileScoreResult {
+    total_brackets: usize,
+    perfect_brackets: usize,
+    bracket_score_accumulator: usize,
+    score_distribution: [usize; 193],
+    top_brackets: Vec<(u8, usize, String, [u8; 63])>,
+}
+
+
+fn score_single_file(
+    filename: &str,
+    winning_bracket: &[u8; 63],
+    max_bracket_score: u8,
+) -> FileScoreResult {
     let mut total_brackets: usize = 0;
     let mut perfect_brackets: usize = 0;
     let mut bracket_score_accumulator: usize = 0;
+    let mut score_distribution: [usize; 193] = [0; 193];
+    let mut top_brackets: Vec<(u8, usize, String, [u8; 63])> = Vec::with_capacity(11);
+
+    let file = File::open(&filename).unwrap();
+    let mut reader: BufReader<File> =
+        BufReader::with_capacity(FILE_READ_WRITE_BUFFER_SIZE, file.try_clone().unwrap());
+
+    let mut temp_bytes: [u8; 8] = [0; 8];
+    let mut bytes: usize = 0;
+    while reader.read_exact(&mut temp_bytes).is_ok() {
+        let mut bracket: [u8; 63] = [0; 63];
+        let score: u8 = decode_and_score(&temp_bytes, winning_bracket, &mut bracket);
+
+        bracket_score_accumulator += score as usize;
+        score_distribution[score as usize] += 1;
+
+        perfect_brackets += (score == max_bracket_score) as usize;
+        total_brackets += 1;
+
+        if top_brackets.len() < 10 || score > top_brackets[top_brackets.len() - 1].0 {
+            top_brackets.push((score, bytes, filename.to_string(), bracket));
+            top_brackets.sort_by_key(|x| x.0);
+            top_brackets.reverse();
+
+            if top_brackets.len() > 10 {
+                top_brackets.remove(10);
+            }
+        }
+
+        bytes += 8;
+    }
+
+    FileScoreResult {
+        total_brackets,
+        perfect_brackets,
+        bracket_score_accumulator,
+        score_distribution,
+        top_brackets,
+    }
+}
+
+
+fn score_brackets() {
+    let winning_bracket: [u8; 63];
+    let max_bracket_score: u8;
 
     { // Find the winning bracket text file
         let winning_bracket_file_contents: String = fs::read_to_string(WINNING_BRACKET_FILE_NAME).expect("Should have been able to read winning_bracket.txt");
@@ -418,81 +473,56 @@ fn score_brackets() {
         max_bracket_score = calc_max_bracket_points(&winning_bracket);
     }
 
-    let m: MultiProgress = MultiProgress::new();
-    let pbar: ProgressBar = m.add(ProgressBar::new(10));
-    let tbar: ProgressBar = m.add(ProgressBar::new(10));
-
-    pbar.set_style(ProgressStyle::with_template("{spinner:.green} [{elapsed_precise}] [{bar:40.green/green}] {bytes}/{total_bytes} ({eta})")
+    // Collect all bracket files first
+    let bracket_files: Vec<String> = glob("*_brackets*.txt")
         .unwrap()
-        .progress_chars("##-"));
-    tbar.set_style(ProgressStyle::with_template("{spinner:.blue} [{elapsed_precise}] [{bar:40.blue/cyan}] {pos}/{len} [{msg}]")
-        .unwrap()
-        .progress_chars("##-"));
+        .chain(glob("*_brackets*.bin").unwrap())
+        .map(|entry| entry.unwrap().into_os_string().into_string().unwrap())
+        .collect();
 
-    let mut top_brackets: Vec<(u8, usize, String, [u8; 63])> = Vec::with_capacity(11);
+    let total_files = bracket_files.len();
+    println!("Processing {} bracket files in parallel...\n", total_files);
+
+    // Process all files in parallel using rayon
+    let file_results: Vec<FileScoreResult> = bracket_files
+        .par_iter()
+        .map(|filename| {
+            println!("Processing: {}", filename);
+            score_single_file(filename, &winning_bracket, max_bracket_score)
+        })
+        .collect();
+
+    // Merge results from all files
+    let mut total_brackets: usize = 0;
+    let mut perfect_brackets: usize = 0;
+    let mut bracket_score_accumulator: usize = 0;
     let mut score_distribution: [usize; 193] = [0; 193];
+    let mut top_brackets: Vec<(u8, usize, String, [u8; 63])> = Vec::with_capacity(11);
 
-    let mut files: u64 = 0;
-    for _ in glob("*_brackets*.txt").unwrap()
-                                            .chain(glob("*_brackets*.bin").unwrap()) {
-        // count number of files
-        files += 1;
-    }
+    for result in file_results {
+        total_brackets += result.total_brackets;
+        perfect_brackets += result.perfect_brackets;
+        bracket_score_accumulator += result.bracket_score_accumulator;
 
-    tbar.set_length(files);
-
-    for entry in glob("*_brackets*.txt").unwrap()
-                                            .chain(glob("*_brackets*.bin").unwrap()) {
-
-        let scoring_bracket_filename: String = entry.unwrap().into_os_string().into_string().unwrap();
-
-        let file: File = File::open(&scoring_bracket_filename.clone()).unwrap();
-        let mut reader: BufReader<File> = BufReader::with_capacity(FILE_READ_WRITE_BUFFER_SIZE, file.try_clone().unwrap());
-        pbar.reset();
-
-        #[cfg(target_os = "linux")]
-        pbar.set_length(file.metadata().unwrap().size());
-
-        #[cfg(target_os = "windows")]
-        pbar.set_length(file.metadata().unwrap().file_size());
-
-        tbar.set_message(scoring_bracket_filename.clone());
-        tbar.inc(0);
-
-        let mut temp_bytes: [u8; 8] = [0; 8];
-        let mut bytes: usize = 0;
-        while reader.read_exact(&mut temp_bytes).is_ok() {
-            let mut bracket: [u8; 63] = [0; 63];
-            let score: u8 = decode_and_score(&temp_bytes, &winning_bracket, &mut bracket);
-
-            bracket_score_accumulator += score as usize;
-            score_distribution[score as usize] += 1;
-
-            // track number of perfect brackets
-            perfect_brackets += (score == max_bracket_score) as usize;
-            total_brackets += 1;
-
-            if top_brackets.len() < 10 || score > top_brackets[top_brackets.len()-1].0 {
-                top_brackets.push(  (score, bytes, scoring_bracket_filename.clone(), bracket)  );
-                top_brackets.sort_by_key(|x| (*x).0);
-                top_brackets.reverse();
-
-                // if the length is longer than 10, remove the last one as it's no longer top 10
-                if top_brackets.len() > 10 {
-                    top_brackets.remove(10);
-                }
-            }
-
-            bytes += 8;
-            pbar.inc(8);
-            tbar.inc(0);
+        // Merge score distributions
+        for (idx, count) in result.score_distribution.iter().enumerate() {
+            score_distribution[idx] += count;
         }
 
-        tbar.inc(1);
+        // Merge top brackets
+        for bracket in result.top_brackets {
+            top_brackets.push(bracket);
+        }
     }
 
-    pbar.finish_and_clear();
-    tbar.finish_and_clear();
+    // Keep only top 10 overall
+    top_brackets.sort_by_key(|x| x.0);
+    top_brackets.reverse();
+    if top_brackets.len() > 10 {
+        top_brackets.truncate(10);
+    }
+
+    println!();
 
     // print results for all files
     print_results(perfect_brackets, total_brackets, bracket_score_accumulator, max_bracket_score, &score_distribution, &top_brackets);
@@ -512,7 +542,10 @@ fn main() {
             println!("Invalid number of brackets to generate: {}", args.count);
         }
     } else {
+        let now: Instant = Instant::now();
         score_brackets();
+        let elapsed: std::time::Duration = now.elapsed();
+        println!("elapsed time: {:.2?}", elapsed);
     }
 }
 
