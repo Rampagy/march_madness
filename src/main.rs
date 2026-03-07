@@ -28,7 +28,7 @@ const CREATE_NEW_FILE_BRACKET_THRESHOLD: usize = 120_000_000; // after so many b
 const FILE_NAME: &str = "brackets";
 const WINNING_BRACKET_FILE_NAME: &str = "winning_bracket.txt";
 const BRACKET_RESOLUTION: usize = 1_000_000; // minimum number (and step) of brackets
-const FILE_READ_WRITE_BUFFER_SIZE: usize = 8*1024*1024; // 8 mebibytes
+const FILE_READ_WRITE_BUFFER_SIZE: usize = 16*1024*1024; // 8 mebibytes
 const STARTING_BRACKET: [u8; 64] = [
     1,  16,  8,  9,  5, 12,  4, 13,  6, 11,  3, 14,  7, 10,  2, 15, // east
     17, 32, 24, 25, 21, 28, 20, 29, 22, 27, 19, 30, 23, 26, 18, 31, // west
@@ -172,7 +172,7 @@ fn decode_and_score(bracket: &[u8; 8], winning_bracket: &[u8; 63], decoded_brack
             bit_count += 1;
             round_count += 1;
 
-            let should_advance = (round_count >= round_size) as u8;
+            let should_advance: u8 = (round_count >= round_size) as u8;
             round_count *= 1 - should_advance as usize;
             round_size >>= should_advance;
             round_score <<= should_advance;
@@ -486,7 +486,6 @@ fn score_brackets() {
     let file_results: Vec<FileScoreResult> = bracket_files
         .par_iter()
         .map(|filename| {
-            println!("Processing: {}", filename);
             score_single_file(filename, &winning_bracket, max_bracket_score)
         })
         .collect();
