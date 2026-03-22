@@ -10,6 +10,8 @@ HEIGHT = 720
 WIDTH = 1280
 FONT_HEIGHT = 12
 LINE_LENGTH = 80
+WIN_COLOR = (0, 255, 0, 255) # rgba
+LOST_COLOR = (255, 75, 0, 255) # rgba
 
 if __name__ == '__main__':
     bracket_keys = {}
@@ -67,7 +69,7 @@ if __name__ == '__main__':
         true_winners = winning_bracket.split(';')[round].split()
         round_length = len(winners.split())
         if round_length == 1:
-            # champions requires special logic
+            # champion requires special logic
             break
         temp_next_round_coords = []
         prev_line_coords = []
@@ -98,9 +100,9 @@ if __name__ == '__main__':
             bbox = draw.textbbox(text_coord, name_str, font=font)
             # highlight in green if correct, red if wrong, no highlight if game is not complete yet
             if true_winners[win_idx] == winner:
-                draw.rectangle(bbox, fill=(0, 255, 0, 255))
+                draw.rectangle(bbox, fill=WIN_COLOR)
             elif true_winners[win_idx] != winner and int(true_winners[win_idx]) > 0:
-                draw.rectangle(bbox, fill=(255, 255, 0, 255))
+                draw.rectangle(bbox, fill=LOST_COLOR)
 
             # draw text and line
             draw.text(text_coord, name_str, fill=(0,0,0), font=font)
@@ -116,6 +118,23 @@ if __name__ == '__main__':
         
         next_round_coords = temp_next_round_coords.copy()
 
+    # draw the champ
+    est_champ = int(VISUALIZE_BRACKET.split(';')[-1]) # estimated champ
+    true_champ = int(winning_bracket.split(';')[-1]) # true champ
+    name_str = ''
+    if est_champ < 17:
+        name_str = str(est_champ % 17) + ' ' + bracket_keys[str(est_champ)]
+    else:
+        name_str = str(((est_champ -1) % 16) + 1) + ' ' + bracket_keys[str(est_champ)]
+
+    (_, _, width, height) = font.getmask(name_str).getbbox()
+    champ_coord = (WIDTH/2 - width/2, HEIGHT/2 - height)
+    bbox = draw.textbbox(champ_coord, name_str, font=font)
+    if est_champ == true_champ:
+        draw.rectangle(bbox, fill=WIN_COLOR)
+    elif est_champ != true_champ and true_champ > 0:
+        draw.rectangle(bbox, fill=LOST_COLOR)
+    draw.text(champ_coord, name_str, fill=(0,0,0), font=font)
 
     # save the picture
     img.save(SAVE_PATH, 'PNG')
