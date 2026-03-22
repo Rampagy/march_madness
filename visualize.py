@@ -16,6 +16,10 @@ if __name__ == '__main__':
     with open(BRACKET_KEYS_FILE, 'r') as file:
         bracket_keys = json.load(file)
 
+    winning_bracket = []
+    with open(WINNING_BRACKET_PATH, 'r') as file:
+        winning_bracket = file.read()
+
     # initialize image
     img = Image.new('RGBA', (WIDTH, HEIGHT), color=(255, 255, 255, 255))
     draw = ImageDraw.Draw(img)
@@ -60,6 +64,7 @@ if __name__ == '__main__':
 
     # rest of the rounds
     for round, winners in enumerate(VISUALIZE_BRACKET.split(';')):
+        true_winners = winning_bracket.split(';')[round].split()
         round_length = len(winners.split())
         if round_length == 1:
             # champions requires special logic
@@ -76,19 +81,26 @@ if __name__ == '__main__':
             text_coord = (0, 0)
             line_coord = (0, 0)
             if win_idx < (round_length / 2):
-                text_coord = (next_round_coords[win_idx][0]+5, next_round_coords[win_idx][1] - FONT_HEIGHT)
+                text_coord = (next_round_coords[win_idx][0]+10, next_round_coords[win_idx][1] - FONT_HEIGHT)
 
                 # line coordinates
                 start = next_round_coords[win_idx]
                 end = (next_round_coords[win_idx][0] + LINE_LENGTH, next_round_coords[win_idx][1])
                 line_coord = (start, end)
             else:
-                text_coord = (next_round_coords[win_idx][0]+5 - LINE_LENGTH, next_round_coords[win_idx][1] - FONT_HEIGHT)
+                text_coord = (next_round_coords[win_idx][0]+10 - LINE_LENGTH, next_round_coords[win_idx][1] - FONT_HEIGHT)
 
                 # line coordinates
                 start = next_round_coords[win_idx]
                 end = (next_round_coords[win_idx][0] - LINE_LENGTH, next_round_coords[win_idx][1])
                 line_coord = (start, end)
+
+            bbox = draw.textbbox(text_coord, name_str, font=font)
+            # highlight in green if correct, red if wrong, no highlight if game is not complete yet
+            if true_winners[win_idx] == winner:
+                draw.rectangle(bbox, fill=(0, 255, 0, 255))
+            elif true_winners[win_idx] != winner and int(true_winners[win_idx]) > 0:
+                draw.rectangle(bbox, fill=(255, 255, 0, 255))
 
             # draw text and line
             draw.text(text_coord, name_str, fill=(0,0,0), font=font)
