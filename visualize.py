@@ -61,6 +61,11 @@ if __name__ == '__main__':
     # rest of the rounds
     for round, winners in enumerate(VISUALIZE_BRACKET.split(';')):
         round_length = len(winners.split())
+        if round_length == 1:
+            # champions requires special logic
+            break
+        temp_next_round_coords = []
+        prev_line_coords = []
         for win_idx, winner in enumerate(winners.split()):
             name_str = ''
             if int(winner) < 17:
@@ -84,11 +89,20 @@ if __name__ == '__main__':
                 start = next_round_coords[win_idx]
                 end = (next_round_coords[win_idx][0] - LINE_LENGTH, next_round_coords[win_idx][1])
                 line_coord = (start, end)
-            
-            # drwaw text and line
+
+            # draw text and line
             draw.text(text_coord, name_str, fill=(0,0,0), font=font)
-            draw.line((start, end), fill='black', width = 1)
-        break
+            draw.line(line_coord, fill='black', width = 1)
+
+            # draw line between the current and previous competitors
+            if (win_idx % 2) == 1:
+                draw.line([line_coord[1], prev_line_coords[1]], fill='black', width = 1)
+                next_y = (line_coord[1][1] + prev_line_coords[1][1]) / 2
+                temp_next_round_coords += [(line_coord[1][0], next_y)]
+            
+            prev_line_coords = line_coord
+        
+        next_round_coords = temp_next_round_coords.copy()
 
 
     # save the picture
