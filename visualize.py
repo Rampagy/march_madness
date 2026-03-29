@@ -8,7 +8,7 @@ WINNING_BRACKET_PATH = 'winning_bracket.txt'
 HEIGHT = 720
 WIDTH = 1280
 FONT_HEIGHT = 12
-LINE_LENGTH = 80
+LINE_LENGTH = 95
 WIN_COLOR = (0, 255, 0, 255) # rgba
 LOST_COLOR = (255, 75, 0, 255) # rgba
 
