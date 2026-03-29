@@ -395,7 +395,7 @@ fn print_results<'a, 'b>(perfect_brackets: usize, total_brackets: usize, bracket
     println!();
 
     for (place, bracket_stats) in top_brackets.iter().enumerate() {
-        println!("place: {:<2}   score: {:<3}   starting_byte: {:<12}   file: {:<16}", place+1, bracket_stats.0, bracket_stats.1+1, bracket_stats.2);
+        println!("place: {:<2}   score: {:<3}   starting_byte: {:<12}   file: {:<16}", place+1, bracket_stats.0, bracket_stats.1, bracket_stats.2);
         println!("bracket: {}\n",  get_human_readable_bracket(&bracket_stats.3));
 
         // call the python script to visualize the bracket
