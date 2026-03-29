@@ -1,10 +1,9 @@
 from PIL import Image, ImageDraw, ImageFont
 import os
 import json
+import argparse
 
-VISUALIZE_BRACKET = '1 9 5 4 6 3 7 2 17 25 21 20 27 19 26 18 33 41 44 36 43 35 39 34 49 57 53 52 54 51 55 50;1 5 3 7 25 20 19 18 33 36 43 34 49 52 51 55;1 7 25 18 36 34 49 55;1 18 34 49;18 34;34'
 BRACKET_KEYS_FILE = 'bracket_keys_2026.json'
-SAVE_PATH = 'top_bracket.png'
 WINNING_BRACKET_PATH = 'winning_bracket.txt'
 HEIGHT = 720
 WIDTH = 1280
@@ -14,6 +13,11 @@ WIN_COLOR = (0, 255, 0, 255) # rgba
 LOST_COLOR = (255, 75, 0, 255) # rgba
 
 if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description='Visualizes a march madness bracket')
+    parser.add_argument('vbracket', help='bracket to be visualized')
+    parser.add_argument('filename', help='name of file to be saved')
+    args = parser.parse_args()
+
     bracket_keys = {}
     with open(BRACKET_KEYS_FILE, 'r') as file:
         bracket_keys = json.load(file)
@@ -65,7 +69,7 @@ if __name__ == '__main__':
         prev_coords = coords.copy()
 
     # rest of the rounds
-    for round, winners in enumerate(VISUALIZE_BRACKET.split(';')):
+    for round, winners in enumerate(args.vbracket.split(';')):
         true_winners = winning_bracket.split(';')[round].split()
         round_length = len(winners.split())
         if round_length == 1:
@@ -119,7 +123,7 @@ if __name__ == '__main__':
         next_round_coords = temp_next_round_coords.copy()
 
     # draw the champ
-    est_champ = int(VISUALIZE_BRACKET.split(';')[-1]) # estimated champ
+    est_champ = int(args.vbracket.split(';')[-1]) # estimated champ
     true_champ = int(winning_bracket.split(';')[-1]) # true champ
     name_str = ''
     if est_champ < 17:
@@ -137,43 +141,4 @@ if __name__ == '__main__':
     draw.text(champ_coord, name_str, fill=(0,0,0), font=font)
 
     # save the picture
-    img.save(SAVE_PATH, 'PNG')
-
-'''
-# Define image size and background color (white)
-width, height = 200, 100
-# Use 'RGBA' mode for potential transparency
-img = Image.new('RGBA', (width, height), color=(255, 255, 255, 255))
-
-# Get a drawing context
-draw = ImageDraw.Draw(img)
-
-# Define text and color (black)
-text = "Hello, World!"
-text_color = (0, 0, 0)
-
-# (Optional) Specify font and size if you have a font file. 
-# You might need to provide the full path to a font file on your system.
-try:
-    # Example font path (adjust for your OS)
-    font = ImageFont.truetype("arial.ttf", 20) 
-except IOError:
-    # Fallback to default font if the specified font is not found
-    font = ImageFont.load_default()
-    print("Could not load arial.ttf, using default font.")
-
-# Calculate text position (simple centering approximation)
-text_width = draw.textlength(text, font=font)
-text_height = font.getbbox()[3] if hasattr(font, 'getbbox') else font.getsize(text)[1] # Pillow version compatibility check
-x = (width - text_width) / 2
-y = (height - text_height) / 2
-
-# Draw the text
-draw.text((x, y), text, fill=text_color, font=font)
-
-# Save the image as a PNG file
-file_path = 'my_image.png'
-img.save(file_path, 'PNG')
-
-print(f"Image saved to {os.path.abspath(file_path)}")
-'''
+    img.save(args.filename, 'PNG')
