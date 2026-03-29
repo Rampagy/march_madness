@@ -190,7 +190,9 @@ fn decode_and_score(bracket: &[u8; 8], winning_bracket: &[u8; 63], decoded_brack
     // Calculate tiebreaker only on pre-calculated unfinished games
     let mut tiebreaker_score: u16 = 0;
     for i in 0..63 {
-        tiebreaker_score += TEAM_TO_SEED[decoded_bracket[i] as usize] as u16;
+        if winning_bracket[i] == 0 {
+            tiebreaker_score += TEAM_TO_SEED[decoded_bracket[i] as usize] as u16;
+        }
     }
 
     return (primary_score, tiebreaker_score);
@@ -408,7 +410,8 @@ fn print_results<'a, 'b>(perfect_brackets: usize, total_brackets: usize, bracket
     println!();
 
     for (place, bracket_stats) in top_brackets.iter().enumerate() {
-        println!("place: {:<2}   score: {:<5}   starting_byte: {:<12}   file: {:<16}", place+1, bracket_stats.0, bracket_stats.2, bracket_stats.3);
+        let score = format!("{}-{}", bracket_stats.0, bracket_stats.1);
+        println!("place: {:<2}   score: {:<7}   starting_byte: {:<12}   file: {:<16}", place+1, score, bracket_stats.2, bracket_stats.3);
         println!("bracket: {}\n",  get_human_readable_bracket(&bracket_stats.4));
 
         // call the python script to visualize the bracket
