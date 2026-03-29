@@ -166,9 +166,9 @@ fn calculate_tiebreaker_config(winning_bracket: &[u8; 63]) -> [u8; 63] {
             team2
         };
         
-        // Store higher seed team for unfinished games
+        // Store the higher seed VALUE for unfinished games
         if winning_bracket[i] == 0 {
-            config[i] = if seed1 < seed2 { team1 } else { team2 };
+            config[i] = if seed1 < seed2 { seed1 } else { seed2 };
         }
     }
     
@@ -196,9 +196,9 @@ fn calculate_tiebreaker_config(winning_bracket: &[u8; 63]) -> [u8; 63] {
                 team2
             };
             
-            // Store higher seed team for unfinished games
+            // Store the higher seed VALUE for unfinished games
             if winning_bracket[idx] == 0 {
-                config[idx] = if seed1 < seed2 { team1 } else { team2 };
+                config[idx] = if seed1 < seed2 { seed1 } else { seed2 };
             }
         }
         
@@ -207,7 +207,7 @@ fn calculate_tiebreaker_config(winning_bracket: &[u8; 63]) -> [u8; 63] {
         round_size /= 2;
     }
     
-    config
+    return config;
 }
 
 
@@ -235,8 +235,11 @@ fn decode_and_score(bracket: &[u8; 8], winning_bracket: &[u8; 63], decoded_brack
             // branchless primary scoring
             primary_score += round_score * (decoded_bracket[bit_count] == winning_bracket[bit_count]) as u8;
 
-            // tiebreaker: for unfinished games, credit if higher seed predicted
-            tiebreaker_score += (winning_bracket[bit_count] == 0 && decoded_bracket[bit_count] == tiebreaker_config[bit_count]) as u16;
+            // tiebreaker: for unfinished games, credit if higher-seeded team predicted
+            if winning_bracket[bit_count] == 0 && tiebreaker_config[bit_count] > 0 {
+                let predicted_seed = if decoded_bracket[bit_count] % 16 == 0 { 16 } else { decoded_bracket[bit_count] % 16 };
+                tiebreaker_score += (predicted_seed <= tiebreaker_config[bit_count]) as u16;
+            }
 
             mask >>= 1;
             bit_count += 1;
