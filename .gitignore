@@ -16,3 +16,4 @@ target/
 # ignore all bracket files
 *brackets*.txt
 *brackets*.bin
+visualized_brackets/*

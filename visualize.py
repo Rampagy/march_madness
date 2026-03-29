@@ -142,3 +142,5 @@ if __name__ == '__main__':
 
     # save the picture
     img.save(args.filename, 'PNG')
+
+    print("image succesfully saved to " + args.filename)
