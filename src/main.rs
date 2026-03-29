@@ -8,6 +8,7 @@ use rand_distr::{Normal, Distribution};
 use clap::Parser;
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use rayon::prelude::*;
+use std::process::Command;
 
 /// Generates and scores march madness brackets
 #[derive(Parser, Debug)]
@@ -396,6 +397,24 @@ fn print_results<'a, 'b>(perfect_brackets: usize, total_brackets: usize, bracket
     for (place, bracket_stats) in top_brackets.iter().enumerate() {
         println!("place: {:<2}   score: {:<3}   starting_byte: {:<12}   file: {:<16}", place+1, bracket_stats.0, bracket_stats.1, bracket_stats.2);
         println!("bracket: {}\n",  get_human_readable_bracket(&bracket_stats.3));
+
+        // call the python script to visualize the bracket
+        #[cfg(target_os = "linux")]
+        let python_name: &str = "python3";
+        #[cfg(target_os = "windows")]
+        let python_name: &str = "py";
+        
+        let output = Command::new(python_name)
+            .arg("visualize.py")
+            .arg(format!("{}", get_human_readable_bracket(&bracket_stats.3)))
+            .arg(format!("visualized_brackets/{}.png", place+1))
+            .output()
+            .expect("failed visualize bracket");
+
+        if !output.status.success() {
+            let stderr = str::from_utf8(&output.stderr).unwrap();
+            eprintln!("Stderr: {}", stderr);
+        }
     }
 }
 
