@@ -36,6 +36,13 @@ const STARTING_BRACKET: [u8; 64] = [
     33, 48, 40, 41, 37, 44, 36, 45, 38, 43, 35, 46, 39, 42, 34, 47, // south
     49, 64, 56, 57, 53, 60, 52, 61, 54, 59, 51, 62, 55, 58, 50, 63, // midwest
 ];
+const TEAM_TO_SEED: [u8; 65] = [
+    0,  // team 0 (unused)
+    1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13, 14, 15, 16,  // teams 1-16 (east)
+    1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13, 14, 15, 16,  // teams 17-32 (west)
+    1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13, 14, 15, 16,  // teams 33-48 (south)
+    1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13, 14, 15, 16,  // teams 49-64 (midwest)
+];
 const SEED1_MEAN_SCORE: f64 = 85.0;
 const TEAMS_SCORE_STDEV: f64 = 10.0;
 
@@ -152,7 +159,6 @@ fn decode_and_score(bracket: &[u8; 8], winning_bracket: &[u8; 63], decoded_brack
     let mut round_count: usize = 0;
     let mut round_score: u8 = 1;
     let mut primary_score: u8 = 0;
-    let mut tiebreaker_score: u16 = 0;
 
     for &b in bracket {
         let mut mask: u8 = 0x80;
@@ -170,12 +176,6 @@ fn decode_and_score(bracket: &[u8; 8], winning_bracket: &[u8; 63], decoded_brack
             // branchless primary scoring
             primary_score += round_score * (decoded_bracket[bit_count] == winning_bracket[bit_count]) as u8;
 
-            // tiebreaker: sum of predicted team seeds for unfinished games (lower is better)
-            if winning_bracket[bit_count] == 0 {
-                let predicted_seed = if decoded_bracket[bit_count] % 16 == 0 { 16 } else { decoded_bracket[bit_count] % 16 };
-                tiebreaker_score += predicted_seed as u16;
-            }
-
             mask >>= 1;
             bit_count += 1;
             round_count += 1;
@@ -185,6 +185,12 @@ fn decode_and_score(bracket: &[u8; 8], winning_bracket: &[u8; 63], decoded_brack
             round_size >>= should_advance;
             round_score <<= should_advance;
         }
+    }
+
+    // Calculate tiebreaker only on pre-calculated unfinished games
+    let mut tiebreaker_score: u16 = 0;
+    for i in 0..63 {
+        tiebreaker_score += TEAM_TO_SEED[decoded_bracket[i] as usize] as u16;
     }
 
     return (primary_score, tiebreaker_score);
