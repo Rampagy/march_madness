@@ -146,72 +146,7 @@ fn encode_to_bytes(bracket: &[u8; 63]) -> u64 {
 }
 
 
-fn calculate_tiebreaker_config(winning_bracket: &[u8; 63]) -> [u8; 63] {
-    let mut config: [u8; 63] = [0; 63];
-    let mut simulated: [u8; 63] = [0; 63];
-    
-    // Round 1: fixed matchups from STARTING_BRACKET
-    for i in 0..32 {
-        let team1 = STARTING_BRACKET[2*i];
-        let team2 = STARTING_BRACKET[2*i + 1];
-        let seed1 = if team1 % 16 == 0 { 16 } else { team1 % 16 };
-        let seed2 = if team2 % 16 == 0 { 16 } else { team2 % 16 };
-        
-        // Use actual result if available, otherwise simulate as higher seed winning
-        simulated[i] = if winning_bracket[i] != 0 {
-            winning_bracket[i]
-        } else if seed1 < seed2 {
-            team1
-        } else {
-            team2
-        };
-        
-        // Store the higher seed VALUE for unfinished games
-        if winning_bracket[i] == 0 {
-            config[i] = if seed1 < seed2 { seed1 } else { seed2 };
-        }
-    }
-    
-    // Rounds 2+: use simulated results to determine matchups
-    let mut round_start = 32;
-    let mut round_size = 16;
-    let mut prev_round_start = 0;
-    
-    for _ in 1..6 {
-        for i in 0..round_size {
-            let idx = round_start + i;
-            if idx >= 63 { break; }
-            
-            let team1 = simulated[prev_round_start + 2*i];
-            let team2 = simulated[prev_round_start + 2*i + 1];
-            let seed1 = if team1 % 16 == 0 { 16 } else { team1 % 16 };
-            let seed2 = if team2 % 16 == 0 { 16 } else { team2 % 16 };
-            
-            // Use actual result if available, otherwise simulate as higher seed winning
-            simulated[idx] = if winning_bracket[idx] != 0 {
-                winning_bracket[idx]
-            } else if seed1 < seed2 {
-                team1
-            } else {
-                team2
-            };
-            
-            // Store the higher seed VALUE for unfinished games
-            if winning_bracket[idx] == 0 {
-                config[idx] = if seed1 < seed2 { seed1 } else { seed2 };
-            }
-        }
-        
-        prev_round_start = round_start;
-        round_start += round_size;
-        round_size /= 2;
-    }
-    
-    return config;
-}
-
-
-fn decode_and_score(bracket: &[u8; 8], winning_bracket: &[u8; 63], decoded_bracket: &mut [u8; 63], tiebreaker_config: &[u8; 63]) -> (u8, u16) {
+fn decode_and_score(bracket: &[u8; 8], winning_bracket: &[u8; 63], decoded_bracket: &mut [u8; 63]) -> (u8, u16) {
     let mut bit_count: usize = 0;
     let mut round_size: usize = 32;
     let mut round_count: usize = 0;
@@ -235,10 +170,10 @@ fn decode_and_score(bracket: &[u8; 8], winning_bracket: &[u8; 63], decoded_brack
             // branchless primary scoring
             primary_score += round_score * (decoded_bracket[bit_count] == winning_bracket[bit_count]) as u8;
 
-            // tiebreaker: for unfinished games, credit if higher-seeded team predicted
-            if winning_bracket[bit_count] == 0 && tiebreaker_config[bit_count] > 0 {
+            // tiebreaker: sum of predicted team seeds for unfinished games (lower is better)
+            if winning_bracket[bit_count] == 0 {
                 let predicted_seed = if decoded_bracket[bit_count] % 16 == 0 { 16 } else { decoded_bracket[bit_count] % 16 };
-                tiebreaker_score += (predicted_seed <= tiebreaker_config[bit_count]) as u16;
+                tiebreaker_score += predicted_seed as u16;
             }
 
             mask >>= 1;
@@ -506,7 +441,6 @@ fn score_single_file(
     filename: &str,
     winning_bracket: &[u8; 63],
     max_bracket_score: u8,
-    tiebreaker_config: &[u8; 63],
 ) -> FileScoreResult {
     let mut total_brackets: usize = 0;
     let mut perfect_brackets: usize = 0;
@@ -522,7 +456,7 @@ fn score_single_file(
     let mut bytes: usize = 0;
     while reader.read_exact(&mut temp_bytes).is_ok() {
         let mut bracket: [u8; 63] = [0; 63];
-        let (primary_score, tiebreaker_score): (u8, u16) = decode_and_score(&temp_bytes, winning_bracket, &mut bracket, tiebreaker_config);
+        let (primary_score, tiebreaker_score): (u8, u16) = decode_and_score(&temp_bytes, winning_bracket, &mut bracket);
 
         bracket_score_accumulator += primary_score as usize;
         score_distribution[primary_score as usize] += 1;
@@ -531,13 +465,13 @@ fn score_single_file(
         total_brackets += 1;
 
         if top_brackets.len() < 10 || primary_score > top_brackets[top_brackets.len() - 1].0 
-            || (primary_score == top_brackets[top_brackets.len() - 1].0 && tiebreaker_score > top_brackets[top_brackets.len() - 1].1) {
+            || (primary_score == top_brackets[top_brackets.len() - 1].0 && tiebreaker_score < top_brackets[top_brackets.len() - 1].1) {
             top_brackets.push((primary_score, tiebreaker_score, bytes, filename.to_string(), bracket));
             top_brackets.sort_by(|a, b| {
                 if a.0 != b.0 {
                     b.0.cmp(&a.0) // sort by primary descending
                 } else {
-                    b.1.cmp(&a.1) // then by tiebreaker descending
+                    a.1.cmp(&b.1) // then by tiebreaker ascending (lower seed sum is better)
                 }
             });
 
@@ -562,14 +496,12 @@ fn score_single_file(
 fn score_brackets() {
     let winning_bracket: [u8; 63];
     let max_bracket_score: u8;
-    let tiebreaker_config: [u8; 63];
 
     { // Find the winning bracket text file
         let winning_bracket_file_contents: String = fs::read_to_string(WINNING_BRACKET_FILE_NAME).expect("Should have been able to read winning_bracket.txt");
         winning_bracket = parse_bracket(&winning_bracket_file_contents);
         println!("winning bracket: {}\n", get_human_readable_bracket(&winning_bracket));
         max_bracket_score = calc_max_bracket_points(&winning_bracket);
-        tiebreaker_config = calculate_tiebreaker_config(&winning_bracket);
     }
 
     // Collect all bracket files first
@@ -586,7 +518,7 @@ fn score_brackets() {
     let file_results: Vec<FileScoreResult> = bracket_files
         .par_iter()
         .map(|filename| {
-            score_single_file(filename, &winning_bracket, max_bracket_score, &tiebreaker_config)
+            score_single_file(filename, &winning_bracket, max_bracket_score)
         })
         .collect();
 
@@ -618,7 +550,7 @@ fn score_brackets() {
         if a.0 != b.0 {
             b.0.cmp(&a.0) // sort by primary descending
         } else {
-            b.1.cmp(&a.1) // then by tiebreaker descending
+            a.1.cmp(&b.1) // then by tiebreaker ascending (lower seed sum is better)
         }
     });
     if top_brackets.len() > 10 {
@@ -690,8 +622,7 @@ mod tests {
                                 50, 5, 17, 34, 49, 17, 49, 17];
         let test_bracket: [u8; 8] = [0x52, 0x42, 0x02, 0x50, 0x07, 0xB7, 0x85, 0x2C];
         let mut test_bracket_decoded: [u8; 63] = [0; 63];
-        let tiebreaker_config: [u8; 63] = [0; 63];
-        let _ = decode_and_score(&test_bracket, &[0; 63], &mut test_bracket_decoded, &[0; 63]);
+        let _ = decode_and_score(&test_bracket, &[0; 63], &mut test_bracket_decoded,);
         assert!(test_bracket_decoded.iter().eq(answer.iter()));
     }
 
@@ -708,10 +639,7 @@ mod tests {
         let mut test_bracket_decoded: [u8; 63] = [0; 63];
 
         // check scoring functionality - extract primary score (first element of tuple)
-        let tiebreaker_config = calculate_tiebreaker_config(&winning_bracket_encoded);
-
-        // check scoring functionality - extract primary score (first element of tuple)
-        let (primary_score, _tiebreaker) = decode_and_score(&test_bracket_encoded, &winning_bracket_encoded, &mut test_bracket_decoded, &tiebreaker_config);
+        let (primary_score, _tiebreaker) = decode_and_score(&test_bracket_encoded, &winning_bracket_encoded, &mut test_bracket_decoded);
         assert_eq!(primary_score, 129);
     }
 
