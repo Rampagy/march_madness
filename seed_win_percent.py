@@ -124,12 +124,13 @@ def summarize_seed_win_percent(files: list[Path]) -> tuple[np.ndarray, np.ndarra
                 win_percent[i, j] = win_counts[i, j] / total
             else:
                 # no data, just pick a some random numbers
-                if i < j:
-                    win_percent[i, j] = 0.99
-                elif i > j:
-                    win_percent[i, j] = 0.01
-                else:
-                    win_percent[i, j] = 0.5
+                #if i < j:
+                #    win_percent[i, j] = 0.99
+                #elif i > j:
+                #    win_percent[i, j] = 0.01
+                #else:
+                #    win_percent[i, j] = 0.5
+                pass
 
     # Avoid exact 0 or 1 values by nudging them to 0.01 and 0.99.
     win_percent = np.where(win_percent == 0.0, 0.01, win_percent)
@@ -182,7 +183,6 @@ def plot_win_percent_matrix(win_percent: np.ndarray) -> None:
 
     cbar = fig.colorbar(im, ax=ax)
     cbar.set_label("Win Percentage")
-    fig.tight_layout()
 
 
 if __name__ == "__main__":
