@@ -1,6 +1,6 @@
 [package]
 name = "march_madness"
-version = "1.6.5"
+version = "1.7.0"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
@@ -13,3 +13,9 @@ clap = { version = "4.5.60", features = ["derive"] }
 indicatif = "0.18.4"
 sysinfo = "0.38.3"
 rayon = "1.10"
+
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+panic = "abort"

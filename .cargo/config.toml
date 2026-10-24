@@ -1,0 +1,3 @@
+# Build on the machine that will run it; the binary will not run on older CPUs.
+[build]
+rustflags = ["-C", "target-cpu=native"]
