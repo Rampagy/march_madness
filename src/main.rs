@@ -2,7 +2,7 @@ use std::fs;
 use std::fs::{File, OpenOptions};
 use std::io::{BufWriter, Write};
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Instant, SystemTime, UNIX_EPOCH};
 use std::collections::HashSet;
 use glob::glob;
 use rand::RngExt;
@@ -23,6 +23,10 @@ struct Args {
     /// Number of brackets to generate (in millions)
     #[arg(short, long, default_value_t = 1)]
     count: usize,
+
+    /// Write scoring results as JSON to this path for the web page (scoring only)
+    #[arg(short, long)]
+    export: Option<String>,
 }
 
 const UNIQUE_BRACKETS_MAX_SIZE: usize = 64*1024*1024*1024; // 64 or 32 gibibytes?
@@ -587,7 +591,59 @@ struct ChunkJob {
 }
 
 
-fn score_brackets() {
+fn json_escape(s: &str) -> String {
+    s.replace('\\', "\\\\").replace('"', "\\\"")
+}
+
+
+fn write_results_json(
+    path: &str,
+    result: &FileScoreResult,
+    max_bracket_score: u8,
+    winning_bracket: &[u8; 63],
+    bracket_files: &[String],
+) -> std::io::Result<()> {
+    let total: usize = result.total_brackets;
+    let average: f64 = if total > 0 { result.bracket_score_accumulator as f64 / total as f64 } else { 0.0 };
+
+    let mut most_common: (usize, usize) = (0, 0);
+    for (score, &count) in result.score_distribution.iter().enumerate() {
+        if count > most_common.1 {
+            most_common = (score, count);
+        }
+    }
+
+    let distribution: String = result.score_distribution.iter().map(|c| c.to_string()).collect::<Vec<String>>().join(",");
+
+    let top: String = result.top_brackets.iter().enumerate().map(|(i, t)| {
+        format!(
+            "{{\"place\":{},\"score\":{},\"tiebreaker\":{},\"bracket\":\"{}\",\"file\":\"{}\",\"starting_byte\":{}}}",
+            i + 1, t.0, t.1, get_human_readable_bracket(&t.4), json_escape(&t.3), t.2
+        )
+    }).collect::<Vec<String>>().join(",");
+
+    let files: String = bracket_files.iter().map(|name| {
+        let bytes: u64 = fs::metadata(name).map(|m| m.len()).unwrap_or(0);
+        format!("{{\"name\":\"{}\",\"bytes\":{}}}", json_escape(name), bytes)
+    }).collect::<Vec<String>>().join(",");
+
+    let updated_at: u64 = SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
+    let games_finished: usize = winning_bracket.iter().filter(|&&team| team != 0).count();
+
+    let json: String = format!(
+        "{{\"updated_at\":{},\"total_brackets\":{},\"perfect_brackets\":{},\"max_bracket_score\":{},\"average_score\":{:.3},\"most_common_score\":{},\"most_common_count\":{},\"games_finished\":{},\"winning_bracket\":\"{}\",\"score_distribution\":[{}],\"top_brackets\":[{}],\"files\":[{}]}}\n",
+        updated_at, total, result.perfect_brackets, max_bracket_score, average, most_common.0, most_common.1,
+        games_finished, get_human_readable_bracket(winning_bracket), distribution, top, files
+    );
+
+    // write then rename so the web server never serves a half-written file
+    let temp_path: String = format!("{}.tmp", path);
+    fs::write(&temp_path, json)?;
+    fs::rename(&temp_path, path)
+}
+
+
+fn score_brackets(export_path: Option<&str>) {
     let winning_bracket: [u8; 63];
     let max_bracket_score: u8;
 
@@ -634,6 +690,11 @@ fn score_brackets() {
     println!();
 
     print_results(result.perfect_brackets, result.total_brackets, result.bracket_score_accumulator, max_bracket_score, &result.score_distribution, &result.top_brackets);
+
+    if let Some(path) = export_path {
+        write_results_json(path, &result, max_bracket_score, &winning_bracket, &bracket_files).expect("failed to write results json");
+        println!("exported results to {}", path);
+    }
 }
 
 
@@ -651,7 +712,7 @@ fn main() {
         }
     } else {
         let now: Instant = Instant::now();
-        score_brackets();
+        score_brackets(args.export.as_deref());
         let elapsed: std::time::Duration = now.elapsed();
         println!("elapsed time: {:.2?}", elapsed);
     }
