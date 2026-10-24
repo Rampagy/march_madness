@@ -384,6 +384,11 @@ fn print_results<'a, 'b>(perfect_brackets: usize, total_brackets: usize, bracket
     println!("Average bracket score: {:.1}", average_bracket_score);
     println!("Most common bracket score: {} ({} brackets or {:.1}%)\n", highest_population_score, highest_population, highest_population_percent);
 
+    if top_brackets.is_empty() {
+        println!("No brackets to display.");
+        return;
+    }
+
     for i in (top_brackets[0].0.saturating_sub(TOP_NUM_BRACKETS_TO_SHOW-1)..=top_brackets[0].0).rev() {
         println!("Brackets with {:3} points: {}", i, score_distribution[i as usize]);
     }
@@ -591,11 +596,6 @@ struct ChunkJob {
 }
 
 
-fn json_escape(s: &str) -> String {
-    s.replace('\\', "\\\\").replace('"', "\\\"")
-}
-
-
 fn write_results_json(
     path: &str,
     result: &FileScoreResult,
@@ -613,33 +613,48 @@ fn write_results_json(
         }
     }
 
-    let distribution: String = result.score_distribution.iter().map(|c| c.to_string()).collect::<Vec<String>>().join(",");
+    let top: Vec<serde_json::Value> = result.top_brackets.iter().enumerate().map(|(i, t)| {
+        serde_json::json!({
+            "place": i + 1,
+            "score": t.0,
+            "tiebreaker": t.1,
+            "bracket": get_human_readable_bracket(&t.4),
+            "file": t.3,
+            "starting_byte": t.2,
+        })
+    }).collect();
 
-    let top: String = result.top_brackets.iter().enumerate().map(|(i, t)| {
-        format!(
-            "{{\"place\":{},\"score\":{},\"tiebreaker\":{},\"bracket\":\"{}\",\"file\":\"{}\",\"starting_byte\":{}}}",
-            i + 1, t.0, t.1, get_human_readable_bracket(&t.4), json_escape(&t.3), t.2
-        )
-    }).collect::<Vec<String>>().join(",");
-
-    let files: String = bracket_files.iter().map(|name| {
+    let files: Vec<serde_json::Value> = bracket_files.iter().map(|name| {
         let bytes: u64 = fs::metadata(name).map(|m| m.len()).unwrap_or(0);
-        format!("{{\"name\":\"{}\",\"bytes\":{}}}", json_escape(name), bytes)
-    }).collect::<Vec<String>>().join(",");
+        serde_json::json!({"name": name, "bytes": bytes})
+    }).collect();
 
     let updated_at: u64 = SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
     let games_finished: usize = winning_bracket.iter().filter(|&&team| team != 0).count();
 
-    let json: String = format!(
-        "{{\"updated_at\":{},\"total_brackets\":{},\"perfect_brackets\":{},\"max_bracket_score\":{},\"average_score\":{:.3},\"most_common_score\":{},\"most_common_count\":{},\"games_finished\":{},\"winning_bracket\":\"{}\",\"score_distribution\":[{}],\"top_brackets\":[{}],\"files\":[{}]}}\n",
-        updated_at, total, result.perfect_brackets, max_bracket_score, average, most_common.0, most_common.1,
-        games_finished, get_human_readable_bracket(winning_bracket), distribution, top, files
-    );
+    let json = serde_json::json!({
+        "updated_at": updated_at,
+        "total_brackets": total,
+        "perfect_brackets": result.perfect_brackets,
+        "max_bracket_score": max_bracket_score,
+        "average_score": (average * 1000.0).round() / 1000.0,
+        "most_common_score": most_common.0,
+        "most_common_count": most_common.1,
+        "games_finished": games_finished,
+        "winning_bracket": get_human_readable_bracket(winning_bracket),
+        "score_distribution": result.score_distribution.to_vec(),
+        "top_brackets": top,
+        "files": files,
+    });
 
-    // write then rename so the web server never serves a half-written file
-    let temp_path: String = format!("{}.tmp", path);
-    fs::write(&temp_path, json)?;
-    fs::rename(&temp_path, path)
+    let mut temp_file: tempfile::NamedTempFile = tempfile::NamedTempFile::new_in(
+        std::path::Path::new(path).parent().filter(|parent| !parent.as_os_str().is_empty()).unwrap_or(std::path::Path::new(".")),
+    )?;
+    serde_json::to_writer_pretty(&mut temp_file, &json)?;
+    temp_file.write_all(b"\n")?;
+    temp_file.as_file().sync_all()?;
+    temp_file.persist(path).map_err(|error| error.error)?;
+    Ok(())
 }
 
 
@@ -723,6 +738,41 @@ fn main() {
 #[cfg(test)] #[allow(non_snake_case)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_export_json_escapes_names_and_replaces_existing_file() {
+        let directory: tempfile::TempDir = tempfile::tempdir().unwrap();
+        let output_path = directory.path().join("results.json");
+        fs::write(&output_path, "previous result").unwrap();
+
+        let filename: String = "quoted \"name\"\n\t\u{0001}.bin".to_string();
+        let bracket_files: Vec<String> = vec![filename.clone()];
+        let result: FileScoreResult = FileScoreResult::empty();
+        let winning_bracket: [u8; 63] = [0; 63];
+
+        write_results_json(output_path.to_str().unwrap(), &result, 0, &winning_bracket, &bracket_files).unwrap();
+        let first_json: serde_json::Value = serde_json::from_slice(&fs::read(&output_path).unwrap()).unwrap();
+        assert_eq!(first_json["files"][0]["name"], filename);
+        assert_eq!(first_json["top_brackets"].as_array().unwrap().len(), 0);
+        assert_eq!(first_json["score_distribution"].as_array().unwrap().len(), 193);
+
+        write_results_json(output_path.to_str().unwrap(), &result, 0, &winning_bracket, &bracket_files).unwrap();
+        let second_json: serde_json::Value = serde_json::from_slice(&fs::read(output_path).unwrap()).unwrap();
+        assert_eq!(second_json["files"][0]["name"], filename);
+    }
+
+    #[test]
+    fn test_print_results_with_no_brackets_does_not_panic() {
+        let result: FileScoreResult = FileScoreResult::empty();
+        print_results(
+            result.perfect_brackets,
+            result.total_brackets,
+            result.bracket_score_accumulator,
+            0,
+            &result.score_distribution,
+            &result.top_brackets,
+        );
+    }
 
     #[test]
     fn test_get_human_readable_bracket() {
