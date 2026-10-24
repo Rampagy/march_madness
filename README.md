@@ -4,7 +4,7 @@ A tool used to produce a large number of [march madness](https://en.wikipedia.or
 
 ## Scoring
 
-This tool uses the same scoring system as Yahoo, CBS, FoxSports, and NCAA.com.  Thus a perfect bracket would get a score of 192 points.
+This tool uses the same scoring system as Yahoo, CBS, FoxSports, and NCAA.com. A perfect bracket scores 192 points when results are available for all 63 games. The maximum score for a partially completed tournament is reduced according to the games with results in `winning_bracket.txt`.
 
 |**COMPANY**|**RND 1**|**RND 2**|**RND 3**|**RND 4**|**RND 5**|**RND 6**
 :----------:|:-------:|:-------:|:-------:|:-------:|:-------:|:-------:
@@ -16,15 +16,15 @@ NCAA.com|1|2|4|8|16|32
 
 ## Formats
 
-This tool only supports scoring version 2 binary (bin) files.  It also only generates the brackets using the version 2 binary (bin) format.
+This tool scores brackets stored as version 2 binary (bin) files and generates brackets in that format. Legacy text bracket files are not supported as scoring inputs.
 
-The bracket used for scoring the other brackets (winning_bracket.txt) will use the text file format (for ease of editing and reading).
+The reference results used to score brackets are read from `winning_bracket.txt` in the text file format (for ease of editing and reading).
 
 ### TXT (text file)
 
 [TXT](https://en.wikipedia.org/wiki/Text_file) is the original (legacy format) that directly listed the team key as [ascii](https://www.asciitable.com/) into the file.  This consumes a significant amount of disk space when generating millions of brackets.
 
-This file format was used for the 2024 competition.
+This file format was used for the 2024 competition. It is not supported as an input format for scoring generated brackets.
 
 ### BIN (binary file version 1)
 
@@ -78,15 +78,36 @@ Using the 2024 bracket keys for this example `North Carolina` and `Purdue` playe
 
 *The bytes are shown in hexadecimal representation and space delimited for the sake of understanding as the ascii representation of some of the characters are not visible.  In an actual file the bytes will be written directly to the file and also not space delimited so that it only takes up 8 bytes per bracket.
 
+## Usage
+
+Run commands from the project directory. Scoring is the default operation and reads `winning_bracket.txt` along with version 2 binary bracket files matching `*_brackets*.bin` in the current directory:
+
+```sh
+cargo run --release
+```
+
+Generate one million brackets (the default count) with:
+
+```sh
+cargo run --release -- --generate
+```
+
+The `--count` option sets the number of brackets in millions. This example generates two million:
+
+```sh
+cargo run --release -- --generate --count 2
+```
+
+Generated files are named `0_brackets.bin`, `1_brackets.bin`, and so on. To export scoring results as JSON:
+
+```sh
+cargo run --release -- --export site/results.json
+```
 
 ## Methods
 
-Can choose between different methods:
+### Seed matchup probabilities
 
-### Legacy method (0)
+For each game, the generator looks up the probability that the first team's seed beats the second team's seed, then draws a random number to choose the winner. The probability table is based on observed results in the `winning_bracket_YYYY.txt` files: matchup win rates are used when available, and a logistic model based on seed difference supplies probabilities for seed pairs that have not met in those brackets.
 
-probability right seed wins = left seed / (left seed + right seed)
-
-### New method (1)
-
-Samples a normal distribution to determine the score of each team and the team with the higher score wins the game.  Distributions are weighted based on seed.
+There is currently one generation method. The legacy seed-ratio formula and normal-distribution method described in older versions are not selectable in the current program.
