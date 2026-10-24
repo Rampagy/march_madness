@@ -35,6 +35,7 @@ const FILE_NAME: &str = "brackets";
 const WINNING_BRACKET_FILE_NAME: &str = "winning_bracket.txt";
 const TOP_BRACKETS_KEPT: usize = 10;
 const SCORE_CHUNK_SIZE: usize = 4*1024*1024; // multiple of 8 so brackets never straddle chunks
+const GENERATION_WRITE_BATCH_SIZE: usize = 1024*1024;
 const BRACKET_RESOLUTION: usize = 1_000_000; // minimum number (and step) of brackets
 const FILE_READ_WRITE_BUFFER_SIZE: usize = 16*1024*1024; // 8 mebibytes
 const STARTING_BRACKET: [u8; 64] = [
@@ -98,13 +99,12 @@ fn get_human_readable_bracket(bracket: &[u8; 63]) -> String {
 }
 
 
-fn generate_bracket(bracket: &mut [u8; 63]) {
+fn generate_bracket(bracket: &mut [u8; 63], rng: &mut rand::prelude::ThreadRng) {
     let mut teams: [u8; 64] = STARTING_BRACKET;
-    let mut rng: rand::prelude::ThreadRng = rand::rng();
     let mut index: usize = 0;
     let mut team_length: u8 = 64;
     while team_length > 1 {
-        get_round_winners(&mut teams, &mut rng, team_length);
+        get_round_winners(&mut teams, rng, team_length);
         team_length /= 2;
 
         for i in 0..team_length as usize {
@@ -187,22 +187,14 @@ fn decode_and_score(bracket: &[u8; 8], winning_bracket: &[u8; 63], decoded_brack
 
 
 fn generate_brackets(num_of_brackets: usize) {
-    let unique_brackets_limit: usize = (UNIQUE_BRACKETS_MAX_SIZE / 8).min(num_of_brackets) + 2*CREATE_NEW_FILE_BRACKET_THRESHOLD; // convert from bytes to brackets and 2GB of buffer 
-    let mut unique_brackets: HashSet<u64> = HashSet::with_capacity(unique_brackets_limit);  // this function is only guaranteed to give you at least this much, but it could give you more (so much more it uses all your memory...)
+    let unique_brackets_limit: usize = num_of_brackets.min(UNIQUE_BRACKETS_MAX_SIZE / (2 * std::mem::size_of::<u64>()));
+    let mut unique_brackets: HashSet<u64> = HashSet::with_capacity(unique_brackets_limit);
     let mut i: usize = 0;
     let mut repeated_brackets: HashSet<u64> = HashSet::new();
     let mut file_number: usize = 0;
     let mut file_count: usize = 0;
-
-    // check to see if hashset overallocated, if so reduce until it's below the max limit
-    let mut attempted_new_capacity: usize = unique_brackets_limit;
-    println!("attempted bracket capacity: {}, got bracket capacity: {}", attempted_new_capacity, unique_brackets.capacity());
-    while unique_brackets.capacity() > unique_brackets_limit {
-        // try shrinking the capacity
-        attempted_new_capacity = (attempted_new_capacity as f64 * 0.9) as usize;
-        unique_brackets.shrink_to(attempted_new_capacity);
-        println!("attempted bracket capacity: {}, got bracket capacity: {}", attempted_new_capacity, unique_brackets.capacity());
-    }
+    let mut duplicate_attempts: u64 = 0;
+    let mut rng: rand::prelude::ThreadRng = rand::rng();
 
     let m: MultiProgress = MultiProgress::new();
     let sty: ProgressStyle = ProgressStyle::with_template(
@@ -222,24 +214,32 @@ fn generate_brackets(num_of_brackets: usize) {
         .open(format!("{}_{}.bin", file_number, FILE_NAME))
         .unwrap();
     let mut writer: BufWriter<File> = BufWriter::with_capacity(FILE_READ_WRITE_BUFFER_SIZE, f);
+    let mut write_buffer: Vec<u8> = Vec::with_capacity(GENERATION_WRITE_BATCH_SIZE);
 
     progress_bar.force_draw();
     while i < num_of_brackets {
         let mut bracket: [u8; 63] = [0; 63];
-        generate_bracket(&mut bracket);
+        generate_bracket(&mut bracket, &mut rng);
         let encoded_bracket: u64 = encode_to_bytes(&bracket);
 
         // only write to the file if it's a unique bracket (inserted into unique_brackets)
         if unique_brackets.insert(encoded_bracket) {
-            let _ = writer.write(&encoded_bracket.to_be_bytes());
+            write_buffer.extend_from_slice(&encoded_bracket.to_be_bytes());
+            if write_buffer.len() >= GENERATION_WRITE_BATCH_SIZE {
+                writer.write_all(&write_buffer).expect("unable to write brackets");
+                write_buffer.clear();
+            }
 
             i += 1;
             file_count += 1;
             progress_bar.inc(1);
         } else {
             repeated_brackets.insert(encoded_bracket);
-            progress_bar.set_message(format!("{} repeats", repeated_brackets.len()));
-            progress_bar.force_draw();
+            duplicate_attempts += 1;
+            if duplicate_attempts % 100_000 == 0 {
+                progress_bar.set_message(format!("{} repeats", repeated_brackets.len()));
+                progress_bar.force_draw();
+            }
         }
 
         if file_count >= CREATE_NEW_FILE_BRACKET_THRESHOLD {
@@ -250,6 +250,8 @@ fn generate_brackets(num_of_brackets: usize) {
             progress_bar.force_draw();
 
             // force write of any remaining bytes to the file
+            writer.write_all(&write_buffer).expect("unable to write brackets");
+            write_buffer.clear();
             writer.flush().expect("unable to write to file");
 
             progress_bar.set_message(format!("optimizing cache"));
@@ -257,6 +259,7 @@ fn generate_brackets(num_of_brackets: usize) {
 
             // check to see if hashset is getting too big and remove some if necessary
             remove_brackets(&mut unique_brackets, &mut repeated_brackets);
+            repeated_brackets.clear();
 
             // create a new file (if there are more brackets to create)
             if i < num_of_brackets {
@@ -278,6 +281,7 @@ fn generate_brackets(num_of_brackets: usize) {
     }
 
     // force write of any remaining bytes to the file
+    writer.write_all(&write_buffer).expect("unable to write brackets");
     writer.flush().expect("unable to write to file");
 
     progress_bar.finish();
@@ -775,6 +779,21 @@ mod tests {
     }
 
     #[test]
+    fn test_remove_brackets_retains_repeats_before_repeat_cache_reset() {
+        let mut unique: HashSet<u64> = HashSet::with_capacity(16);
+        for value in 0..15 {
+            unique.insert(value);
+        }
+        let mut repeated: HashSet<u64> = [1, 2, 3].into_iter().collect();
+
+        remove_brackets(&mut unique, &mut repeated);
+
+        assert!(repeated.iter().all(|value| unique.contains(value)));
+        repeated.clear();
+        assert!([1, 2, 3].iter().all(|value| unique.contains(value)));
+    }
+
+    #[test]
     fn test_get_human_readable_bracket() {
         let a: [u8; 63] = [35; 63];
         let b: String = get_human_readable_bracket(&a);
@@ -830,9 +849,10 @@ mod tests {
 
     #[test]
     fn test_mask_scoring_matches_decode_scoring() {
+        let mut rng: rand::prelude::ThreadRng = rand::rng();
         for games_finished in [0usize, 10, 32, 40, 48, 60, 63] {
             let mut winning: [u8; 63] = [0; 63];
-            generate_bracket(&mut winning);
+            generate_bracket(&mut winning, &mut rng);
             for g in games_finished..63 {
                 winning[g] = 0;
             }
@@ -840,7 +860,7 @@ mod tests {
 
             for _ in 0..2000 {
                 let mut bracket: [u8; 63] = [0; 63];
-                generate_bracket(&mut bracket);
+                generate_bracket(&mut bracket, &mut rng);
                 let encoded: u64 = encode_to_bytes(&bracket);
 
                 let mut decoded: [u8; 63] = [0; 63];
@@ -888,8 +908,9 @@ mod tests {
     #[test]
     fn test_bracket_generation() {
         let mut bracket: [u8; 63] = [0; 63];
+        let mut rng: rand::prelude::ThreadRng = rand::rng();
         
-        generate_bracket(&mut bracket);
+        generate_bracket(&mut bracket, &mut rng);
         
         // Verify round 1: Each winner should be one of the two starting teams
         for game_idx in 0..32 {
