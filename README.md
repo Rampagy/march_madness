@@ -112,6 +112,16 @@ python3 -m http.server 8000 --directory site
 
 Open `http://localhost:8000/`, `http://localhost:8000/2024/`, or `http://localhost:8000/2025/`. Stop the server with `Ctrl+C`. This serves the static files but does not reproduce Nginx or Cloudflare cache headers.
 
+### Yearly rollover
+
+After the final scoring export for a season, archive it and reset the live page for the next season:
+
+```sh
+python3 season_rollover.py --year 2027
+```
+
+This copies the live `site/` page, `teams.json`, and `results.json` into `site/<old year>/`, rewrites the year navigation on every page, and installs `bracket_keys_2027.json` as the new `teams.json` with empty results. It refuses to overwrite an existing archive or archive an unfinished season (`--allow-incomplete` overrides). Use `--dry-run` to preview. Then create `winning_bracket_2027.txt` and run the scorer to export the new year's results.
+
 ## Methods
 
 ### Seed matchup probabilities
