@@ -3,12 +3,17 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>2026 March Madness Bracket Challenge</title>
-<link rel="stylesheet" href="style.css">
+<title>March Madness Bracket Challenge</title>
+<link rel="stylesheet" href="/style.css">
 </head>
-<body>
+<body data-year="2026" data-current="true">
 <header>
-  <h1>2026 March Madness Bracket Challenge</h1>
+  <h1 id="page-title">March Madness Bracket Challenge</h1>
+  <nav class="year-nav" aria-label="Tournament year">
+    <a data-year-link="2026" href="/">2026</a>
+    <a data-year-link="2025" href="/2025/">2025</a>
+    <a data-year-link="2024" href="/2024/">2024</a>
+  </nav>
   <p id="updated" class="muted">Loading...</p>
 </header>
 
@@ -46,6 +51,6 @@
   </section>
 </main>
 
-<script src="app.js"></script>
+<script src="/app.js"></script>
 </body>
 </html>

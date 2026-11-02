@@ -1,10 +1,10 @@
 use std::fs;
 use std::fs::{File, OpenOptions};
 use std::io::{BufWriter, Write};
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 use std::collections::HashSet;
-use glob::glob;
 use rand::RngExt;
 use clap::Parser;
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
@@ -27,12 +27,19 @@ struct Args {
     /// Write scoring results as JSON to this path for the web page (scoring only)
     #[arg(short, long)]
     export: Option<String>,
+
+    /// Reference winning bracket file
+    #[arg(long, default_value = "winning_bracket.txt")]
+    winning_bracket: PathBuf,
+
+    /// Directory containing bracket files (also used for generated files)
+    #[arg(long, default_value = ".")]
+    bracket_dir: PathBuf,
 }
 
 const UNIQUE_BRACKETS_MAX_SIZE: usize = 64*1024*1024*1024; // 64 or 32 gibibytes?
 const CREATE_NEW_FILE_BRACKET_THRESHOLD: usize = 120_000_000; // after so many brackets start a new file
 const FILE_NAME: &str = "brackets";
-const WINNING_BRACKET_FILE_NAME: &str = "winning_bracket.txt";
 const TOP_BRACKETS_KEPT: usize = 10;
 const SCORE_CHUNK_SIZE: usize = 4*1024*1024; // multiple of 8 so brackets never straddle chunks
 const GENERATION_WRITE_BATCH_SIZE: usize = 1024*1024;
@@ -186,7 +193,8 @@ fn decode_and_score(bracket: &[u8; 8], winning_bracket: &[u8; 63], decoded_brack
 }
 
 
-fn generate_brackets(num_of_brackets: usize) {
+fn generate_brackets(num_of_brackets: usize, bracket_dir: &Path) {
+    fs::create_dir_all(bracket_dir).expect("unable to create bracket directory");
     let unique_brackets_limit: usize = num_of_brackets.min(UNIQUE_BRACKETS_MAX_SIZE / (2 * std::mem::size_of::<u64>()));
     let mut unique_brackets: HashSet<u64> = HashSet::with_capacity(unique_brackets_limit);
     let mut i: usize = 0;
@@ -211,7 +219,7 @@ fn generate_brackets(num_of_brackets: usize) {
         .create(true)
         .write(true)
         .append(true)
-        .open(format!("{}_{}.bin", file_number, FILE_NAME))
+        .open(bracket_dir.join(format!("{}_{}.bin", file_number, FILE_NAME)))
         .unwrap();
     let mut writer: BufWriter<File> = BufWriter::with_capacity(FILE_READ_WRITE_BUFFER_SIZE, f);
     let mut write_buffer: Vec<u8> = Vec::with_capacity(GENERATION_WRITE_BATCH_SIZE);
@@ -270,7 +278,7 @@ fn generate_brackets(num_of_brackets: usize) {
                     .create(true)
                     .write(true)
                     .append(true)
-                    .open(format!("{}_{}.bin", file_number, FILE_NAME))
+                    .open(bracket_dir.join(format!("{}_{}.bin", file_number, FILE_NAME)))
                     .unwrap();
                 writer = BufWriter::with_capacity(FILE_READ_WRITE_BUFFER_SIZE, f);
             }
@@ -605,7 +613,7 @@ fn write_results_json(
     result: &FileScoreResult,
     max_bracket_score: u8,
     winning_bracket: &[u8; 63],
-    bracket_files: &[String],
+    bracket_files: &[PathBuf],
 ) -> std::io::Result<()> {
     let total: usize = result.total_brackets;
     let average: f64 = if total > 0 { result.bracket_score_accumulator as f64 / total as f64 } else { 0.0 };
@@ -628,8 +636,9 @@ fn write_results_json(
         })
     }).collect();
 
-    let files: Vec<serde_json::Value> = bracket_files.iter().map(|name| {
-        let bytes: u64 = fs::metadata(name).map(|m| m.len()).unwrap_or(0);
+    let files: Vec<serde_json::Value> = bracket_files.iter().map(|file| {
+        let bytes: u64 = fs::metadata(file).map(|m| m.len()).unwrap_or(0);
+        let name = file.file_name().unwrap_or_default().to_string_lossy();
         serde_json::json!({"name": name, "bytes": bytes})
     }).collect();
 
@@ -657,28 +666,37 @@ fn write_results_json(
     serde_json::to_writer_pretty(&mut temp_file, &json)?;
     temp_file.write_all(b"\n")?;
     temp_file.as_file().sync_all()?;
+    // NamedTempFile is created 0600, which the web server user cannot read
+    #[cfg(unix)]
+    std::fs::set_permissions(temp_file.path(), std::os::unix::fs::PermissionsExt::from_mode(0o644))?;
     temp_file.persist(path).map_err(|error| error.error)?;
     Ok(())
 }
 
 
-fn score_brackets(export_path: Option<&str>) {
+fn score_brackets(export_path: Option<&str>, winning_bracket_path: &Path, bracket_dir: &Path) {
     let winning_bracket: [u8; 63];
     let max_bracket_score: u8;
 
     { // Find the winning bracket text file
-        let winning_bracket_file_contents: String = fs::read_to_string(WINNING_BRACKET_FILE_NAME).expect("Should have been able to read winning_bracket.txt");
+        let winning_bracket_file_contents: String = fs::read_to_string(winning_bracket_path)
+            .expect("unable to read winning bracket file");
         winning_bracket = parse_bracket(&winning_bracket_file_contents);
         println!("winning bracket: {}\n", get_human_readable_bracket(&winning_bracket));
         max_bracket_score = calc_max_bracket_points(&winning_bracket);
     }
 
     // Collect all bracket files first
-    let bracket_files: Vec<String> = glob("*_brackets*.txt")
-        .unwrap()
-        .chain(glob("*_brackets*.bin").unwrap())
-        .map(|entry| entry.unwrap().into_os_string().into_string().unwrap())
+    let mut bracket_files: Vec<PathBuf> = fs::read_dir(bracket_dir)
+        .expect("unable to read bracket directory")
+        .map(|entry| entry.expect("unable to read bracket directory entry").path())
+        .filter(|path| {
+            path.is_file()
+                && path.file_name().is_some_and(|name| name.to_string_lossy().contains("_brackets"))
+                && path.extension().is_some_and(|extension| extension == "bin")
+        })
         .collect();
+    bracket_files.sort();
 
     let total_files = bracket_files.len();
     println!("Processing {} bracket files...\n", total_files);
@@ -689,7 +707,7 @@ fn score_brackets(export_path: Option<&str>) {
     let mut jobs: Vec<ChunkJob> = Vec::new();
     for filename in &bracket_files {
         let file: Arc<File> = Arc::new(File::open(filename).unwrap());
-        let name: Arc<str> = Arc::from(filename.as_str());
+        let name: Arc<str> = Arc::from(filename.file_name().unwrap_or_default().to_string_lossy().as_ref());
         let usable_len: usize = file.metadata().unwrap().len() as usize / 8 * 8;
 
         for offset in (0..usable_len).step_by(SCORE_CHUNK_SIZE) {
@@ -725,13 +743,17 @@ fn main() {
         let num_brackets: usize = args.count * BRACKET_RESOLUTION;
 
         if num_brackets > 0 {
-            generate_brackets(num_brackets);
+            generate_brackets(num_brackets, &args.bracket_dir);
         } else {
             println!("Invalid number of brackets to generate: {}", args.count);
         }
     } else {
         let now: Instant = Instant::now();
-        score_brackets(args.export.as_deref());
+        score_brackets(
+            args.export.as_deref(),
+            &args.winning_bracket,
+            &args.bracket_dir,
+        );
         let elapsed: std::time::Duration = now.elapsed();
         println!("elapsed time: {:.2?}", elapsed);
     }
@@ -750,7 +772,7 @@ mod tests {
         fs::write(&output_path, "previous result").unwrap();
 
         let filename: String = "quoted \"name\"\n\t\u{0001}.bin".to_string();
-        let bracket_files: Vec<String> = vec![filename.clone()];
+        let bracket_files: Vec<PathBuf> = vec![PathBuf::from(filename.clone())];
         let result: FileScoreResult = FileScoreResult::empty();
         let winning_bracket: [u8; 63] = [0; 63];
 
@@ -759,6 +781,8 @@ mod tests {
         assert_eq!(first_json["files"][0]["name"], filename);
         assert_eq!(first_json["top_brackets"].as_array().unwrap().len(), 0);
         assert_eq!(first_json["score_distribution"].as_array().unwrap().len(), 193);
+        #[cfg(unix)]
+        assert_eq!(std::os::unix::fs::PermissionsExt::mode(&fs::metadata(&output_path).unwrap().permissions()) & 0o777, 0o644);
 
         write_results_json(output_path.to_str().unwrap(), &result, 0, &winning_bracket, &bracket_files).unwrap();
         let second_json: serde_json::Value = serde_json::from_slice(&fs::read(output_path).unwrap()).unwrap();
