@@ -133,12 +133,52 @@ FALLBACK_STEEPNESS = 0.15
 
 def build_probability_table(win_percent: np.ndarray) -> np.ndarray:
     """Use observed win rates directly; fill unseen pairs with a logistic model."""
-    table = win_percent.copy()
+    table = build_seed_prior()
+    observed = ~np.isnan(win_percent)
+    table[observed] = win_percent[observed]
+    return table
+
+
+def build_seed_prior() -> np.ndarray:
+    """Build the logistic seed-difference prior for every seed matchup."""
+    table = np.empty((16, 16), dtype=float)
     for i in range(16):
         for j in range(16):
-            if math.isnan(table[i, j]):
-                table[i, j] = 1.0 / (1.0 + math.exp(-FALLBACK_STEEPNESS * (j - i)))
+            table[i, j] = 1.0 / (1.0 + math.exp(-FALLBACK_STEEPNESS * (j - i)))
     return table
+
+
+def build_smoothed_probability_table(
+    win_counts: np.ndarray,
+    prior_strength: float = 4.0,
+) -> np.ndarray:
+    """Blend observed matchup rates with the logistic seed-difference prior."""
+    if prior_strength < 0:
+        raise ValueError("prior_strength must be non-negative")
+
+    prior = build_seed_prior()
+    games_played = win_counts + win_counts.T
+    denominator = games_played + prior_strength
+    numerator = win_counts + prior_strength * prior
+    return np.divide(numerator, denominator, out=prior.copy(), where=denominator > 0)
+
+
+def brier_score(table: np.ndarray, matches: list[tuple[int, int]]) -> float:
+    """Score held-out game predictions using the lower seed as canonical first team."""
+    squared_errors = []
+    for winner_id, loser_id in matches:
+        winner_seed = team_seed(winner_id)
+        loser_seed = team_seed(loser_id)
+        if winner_seed < loser_seed:
+            probability = table[winner_seed - 1, loser_seed - 1]
+            outcome = 1.0
+        else:
+            probability = table[loser_seed - 1, winner_seed - 1]
+            outcome = 0.0
+        squared_errors.append((probability - outcome) ** 2)
+    if not squared_errors:
+        raise ValueError("holdout contains no match results")
+    return float(np.mean(squared_errors))
 
 
 def write_rust_table(table: np.ndarray, path: Path) -> None:
@@ -196,15 +236,33 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser()
     parser.add_argument("--plot", action="store_true", help="show the win percent matrix")
+    parser.add_argument("--compare-holdout", type=Path, help="compare raw and smoothed tables on this bracket without training on it")
+    parser.add_argument("--prior-strength", type=float, default=4.0, help="pseudo-game weight for the logistic prior (default: 4)")
+    parser.add_argument("--output", type=Path, help="Rust table output path (default: src/seed_win_probabilities.rs)")
     args = parser.parse_args()
 
     win_counts, win_percent = summarize_seed_win_percent(files)
     probabilities = build_probability_table(win_percent)
-    out_path = root / "src" / "seed_win_probabilities.rs"
-    write_rust_table(probabilities, out_path)
-    print(f"Wrote {out_path}")
+
+    if args.compare_holdout:
+        holdout_rounds = parse_bracket_file(args.compare_holdout)
+        holdout_matches = extract_match_results(holdout_rounds)
+        smoothed = build_smoothed_probability_table(win_counts, args.prior_strength)
+        raw_brier = brier_score(probabilities, holdout_matches)
+        smoothed_brier = brier_score(smoothed, holdout_matches)
+        print(f"Training years: {', '.join(path.stem.removeprefix('winning_bracket_') for path in files)}")
+        print(f"Holdout: {args.compare_holdout} ({len(holdout_matches)} games)")
+        print(f"Raw table Brier score: {raw_brier:.6f}")
+        print(f"Smoothed table Brier score (prior strength {args.prior_strength:g}): {smoothed_brier:.6f}")
+        print(f"Brier change (smoothed - raw): {smoothed_brier - raw_brier:+.6f}")
+
+    output_table = build_smoothed_probability_table(win_counts, args.prior_strength)
+    out_path = args.output or (root / "src" / "seed_win_probabilities.rs")
+    write_rust_table(output_table, out_path)
+    table_name = f"smoothed (k={args.prior_strength:g})"
+    print(f"Wrote {table_name} probability table to {out_path}")
 
     if args.plot:
         plot_win_percent_matrix(win_percent, "Observed Win Rates by Seed Matchup")
-        plot_win_percent_matrix(probabilities, "Probabilities Written to Rust")
+        plot_win_percent_matrix(output_table, f"Probabilities Written to Rust ({table_name})")
         plt.show()
