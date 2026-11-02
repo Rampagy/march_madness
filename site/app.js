@@ -1,6 +1,7 @@
 const RESULTS_URL = "results.json";
-const REFRESH_MS = 60000;
 const DRIVE_URL = ""; // public Drive link to the bracket files; shown when set
+const PAGE_YEAR = document.body.dataset.year || "2026";
+const IS_CURRENT_YEAR = document.body.dataset.current === "true";
 
 const number = new Intl.NumberFormat();
 const SVG_NS = "http://www.w3.org/2000/svg";
@@ -30,6 +31,16 @@ function card(label, value, sub) {
   node.append(el("div", "label", label), el("div", "value", value));
   if (sub) node.append(el("div", "sub", sub));
   return node;
+}
+
+function renderPageIdentity() {
+  const title = `${PAGE_YEAR} March Madness Bracket Challenge`;
+  document.title = title;
+  document.getElementById("page-title").textContent = title;
+  for (const link of document.querySelectorAll("[data-year-link]")) {
+    if (link.dataset.yearLink === PAGE_YEAR) link.setAttribute("aria-current", "page");
+    else link.removeAttribute("aria-current");
+  }
 }
 
 function renderStats(data) {
@@ -356,7 +367,7 @@ function renderFiles(data) {
 
   const verify = document.getElementById("verify");
   verify.textContent = "All scored brackets come from these files. ";
-  if (DRIVE_URL) {
+  if (DRIVE_URL && IS_CURRENT_YEAR) {
     const link = el("a", null, "Download them to check for yourself.");
     link.href = DRIVE_URL;
     verify.append(link);
@@ -379,13 +390,15 @@ function render(data) {
 
 async function load() {
   try {
-    const response = await fetch(RESULTS_URL, { cache: "no-store" });
+    const response = await fetch(RESULTS_URL, {
+      cache: IS_CURRENT_YEAR ? "no-store" : "default",
+    });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     latest = await response.json();
     render(latest);
   } catch (error) {
     const note = latest ? " (showing the last good data)" : "";
-    document.getElementById("updated").textContent = `Could not load results${note}; retrying.`;
+    document.getElementById("updated").textContent = `Could not load results${note}; refresh the page to try again.`;
   }
 }
 
@@ -393,7 +406,5 @@ document.getElementById("log-scale").addEventListener("change", () => {
   if (latest) renderHistogram(latest);
 });
 
-loadTeams().then(() => {
-  load();
-  setInterval(load, REFRESH_MS);
-});
+renderPageIdentity();
+loadTeams().then(load);

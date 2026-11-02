@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>March Madness Bracket Challenge</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body data-year="2024" data-current="false">
+<header>
+  <h1 id="page-title">March Madness Bracket Challenge</h1>
+  <nav class="year-nav" aria-label="Tournament year">
+    <a data-year-link="2026" href="/">2026</a>
+    <a data-year-link="2025" href="/2025/">2025</a>
+    <a data-year-link="2024" href="/2024/">2024</a>
+  </nav>
+  <p id="updated" class="muted">Loading...</p>
+</header>
+
+<main>
+  <section id="stats" class="grid" aria-label="Summary statistics"></section>
+
+  <section>
+    <h2>Tournament progress</h2>
+    <div class="progress" role="progressbar" aria-valuemin="0" aria-valuemax="63" id="progress">
+      <div id="progress-bar"></div>
+    </div>
+    <p id="progress-text" class="muted"></p>
+  </section>
+
+  <section>
+    <div class="section-head">
+      <h2>Score distribution</h2>
+      <label class="muted"><input type="checkbox" id="log-scale"> log scale</label>
+    </div>
+    <div id="histogram"></div>
+  </section>
+
+  <section>
+    <h2>Top brackets</h2>
+    <div id="top" class="top-list"></div>
+  </section>
+
+  <section>
+    <h2>Bracket files</h2>
+    <p id="verify" class="muted"></p>
+    <table id="files">
+      <thead><tr><th>File</th><th class="num">Size</th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </section>
+</main>
+
+<script src="/app.js"></script>
+</body>
+</html>
