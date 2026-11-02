@@ -1,7 +1,7 @@
-const RESULTS_URL = "results.json";
 const DRIVE_URL = ""; // public Drive link to the bracket files; shown when set
-const PAGE_YEAR = document.body.dataset.year || "2026";
-const IS_CURRENT_YEAR = document.body.dataset.current === "true";
+let pageYear = document.body.dataset.year || "2026";
+let isCurrentYear = document.body.dataset.current === "true";
+let navigationRequest = 0;
 
 const number = new Intl.NumberFormat();
 const SVG_NS = "http://www.w3.org/2000/svg";
@@ -34,11 +34,11 @@ function card(label, value, sub) {
 }
 
 function renderPageIdentity() {
-  const title = `${PAGE_YEAR} March Madness Bracket Challenge`;
+  const title = `${pageYear} March Madness Bracket Challenge`;
   document.title = title;
   document.getElementById("page-title").textContent = title;
   for (const link of document.querySelectorAll("[data-year-link]")) {
-    if (link.dataset.yearLink === PAGE_YEAR) link.setAttribute("aria-current", "page");
+    if (link.dataset.yearLink === pageYear) link.setAttribute("aria-current", "page");
     else link.removeAttribute("aria-current");
   }
 }
@@ -78,11 +78,9 @@ function renderHistogram(data) {
   const counts = data.score_distribution;
   const useLog = document.getElementById("log-scale").checked;
   const scale = (count) => (useLog ? Math.log10(count + 1) : count);
-
-  let first = counts.findIndex((c) => c > 0);
-  let last = counts.length - 1 - [...counts].reverse().findIndex((c) => c > 0);
+  const maxScore = 192;
   const target = document.getElementById("histogram");
-  if (first < 0) {
+  if (!counts.slice(0, maxScore + 1).some((count) => count > 0)) {
     target.replaceChildren(el("p", "muted", "No data yet."));
     return;
   }
@@ -91,20 +89,19 @@ function renderHistogram(data) {
   const margin = { top: 10, right: 10, bottom: 28, left: 10 };
   const plotWidth = width - margin.left - margin.right;
   const plotHeight = height - margin.top - margin.bottom;
-  const bins = last - first + 1;
+  const bins = maxScore + 1;
   const barWidth = plotWidth / bins;
-  const maxValue = Math.max(...counts.slice(first, last + 1).map(scale));
+  const maxValue = Math.max(...counts.slice(0, maxScore + 1).map(scale));
 
   const chart = svg("svg", { viewBox: `0 0 ${width} ${height}`, role: "img",
-                             "aria-label": "Number of brackets at each score" });
+                             "aria-label": "Number of brackets at scores from 0 to 192" });
 
-  for (let i = 0; i < bins; i++) {
-    const score = first + i;
-    const count = counts[score];
+  for (let score = 0; score <= maxScore; score++) {
+    const count = counts[score] || 0;
     const barHeight = maxValue > 0 ? (scale(count) / maxValue) * plotHeight : 0;
     const bar = svg("rect", {
       class: "bar",
-      x: margin.left + i * barWidth,
+      x: margin.left + score * barWidth,
       y: margin.top + plotHeight - barHeight,
       width: Math.max(barWidth - 1, 1),
       height: barHeight,
@@ -118,9 +115,8 @@ function renderHistogram(data) {
   chart.append(svg("line", { x1: margin.left, x2: width - margin.right,
                              y1: margin.top + plotHeight, y2: margin.top + plotHeight }));
 
-  const step = Math.max(1, Math.ceil(bins / 12));
-  for (let score = first; score <= last; score += step) {
-    const label = svg("text", { x: margin.left + (score - first + 0.5) * barWidth,
+  for (let score = 0; score <= maxScore; score += 16) {
+    const label = svg("text", { x: margin.left + (score + 0.5) * barWidth,
                                 y: height - 8, "text-anchor": "middle" });
     label.textContent = score;
     chart.append(label);
@@ -133,7 +129,6 @@ function renderHistogram(data) {
 // Games are indexed like the scorer: 0-31 round 1, 32-47 round 2, 48-55 sweet 16,
 // 56-59 regional finals, 60-61 semifinals, 62 final. Teams 1-64 run region by region.
 
-const TEAMS_URL = "teams.json";
 const SEED_ORDER = [1, 16, 8, 9, 5, 12, 4, 13, 6, 11, 3, 14, 7, 10, 2, 15];
 const REGION_NAMES = ["East", "West", "South", "Midwest"];
 
@@ -144,15 +139,6 @@ const SVG_W = 2 * EDGE + 2 * (4 * STEP + SLOT_W) + 2 * CENTER_GAP + SLOT_W;
 const SVG_H = 4 + 2 * (REGION_H + LABEL_H) + REGION_GAP + 4;
 
 let teams = {};
-
-async function loadTeams() {
-  try {
-    const response = await fetch(TEAMS_URL);
-    if (response.ok) teams = await response.json();
-  } catch (error) {
-    // names are optional; slots fall back to "Team N"
-  }
-}
 
 function parseBracket(text) {
   return text.split(/[;\s]+/).filter(Boolean).map(Number);
@@ -388,17 +374,51 @@ function render(data) {
   renderFiles(data);
 }
 
-async function load() {
+async function fetchYearData(url, currentYear) {
+  const pageUrl = new URL(url, window.location.href);
+  const [resultsResponse, teamsResponse] = await Promise.all([
+    fetch(new URL("results.json", pageUrl), { cache: currentYear ? "no-store" : "default" }),
+    fetch(new URL("teams.json", pageUrl)),
+  ]);
+  if (!resultsResponse.ok) throw new Error(`results.json returned HTTP ${resultsResponse.status}`);
+  if (!teamsResponse.ok) throw new Error(`teams.json returned HTTP ${teamsResponse.status}`);
+  const [results, yearTeams] = await Promise.all([
+    resultsResponse.json(),
+    teamsResponse.json(),
+  ]);
+  return { results, teams: yearTeams };
+}
+
+async function showYear(year, url, currentYear, updateHistory) {
+  const requestId = ++navigationRequest;
   try {
-    const response = await fetch(RESULTS_URL, {
-      cache: IS_CURRENT_YEAR ? "no-store" : "default",
-    });
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    latest = await response.json();
+    const data = await fetchYearData(url, currentYear);
+    if (requestId !== navigationRequest) return;
+
+    if (updateHistory) history.pushState({ year }, "", url);
+    pageYear = year;
+    isCurrentYear = currentYear;
+    teams = data.teams;
+    latest = data.results;
+    renderPageIdentity();
     render(latest);
   } catch (error) {
-    const note = latest ? " (showing the last good data)" : "";
-    document.getElementById("updated").textContent = `Could not load results${note}; refresh the page to try again.`;
+    if (requestId === navigationRequest) {
+      document.getElementById("updated").textContent =
+        `Could not load ${year} data; the current page is unchanged. ${error.message}`;
+    }
+  }
+}
+
+async function load() {
+  try {
+    const data = await fetchYearData(window.location.href, isCurrentYear);
+    teams = data.teams;
+    latest = data.results;
+    render(latest);
+  } catch (error) {
+    document.getElementById("updated").textContent =
+      `Could not load results; refresh the page to try again. ${error.message}`;
   }
 }
 
@@ -406,5 +426,27 @@ document.getElementById("log-scale").addEventListener("change", () => {
   if (latest) renderHistogram(latest);
 });
 
+document.addEventListener("click", (event) => {
+  const link = event.target.closest("a[data-year-link]");
+  if (!link || event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+  if (link.origin !== window.location.origin) return;
+
+  event.preventDefault();
+  showYear(link.dataset.yearLink, link.href, link.getAttribute("href") === "/", true);
+});
+
+window.addEventListener("popstate", () => {
+  const path = window.location.pathname;
+  if (path === "/") {
+    const liveLink = document.querySelector('a[data-year-link][href="/"]');
+    const year = liveLink ? liveLink.dataset.yearLink : document.body.dataset.year;
+    showYear(year, path, true, false);
+    return;
+  }
+
+  const match = path.match(/^\/(\d{4})\/?$/);
+  if (match) showYear(match[1], path.endsWith("/") ? path : `${path}/`, false, false);
+});
+
 renderPageIdentity();
-loadTeams().then(load);
+load();
