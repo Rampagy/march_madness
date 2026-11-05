@@ -122,6 +122,16 @@ python3 season_rollover.py --year 2027
 
 This copies the live `site/` page, `teams.json`, and `results.json` into `site/<old year>/`, rewrites the year navigation on every page, and installs `bracket_keys_2027.json` as the new `teams.json` with empty results. It refuses to overwrite an existing archive or archive an unfinished season (`--allow-incomplete` overrides). Use `--dry-run` to preview. Then create `winning_bracket_2027.txt` and run the scorer to export the new year's results.
 
+### Updating the winning bracket
+
+Build `winning_bracket.txt` from ESPN's results instead of typing it in:
+
+```sh
+python3 update_winning_bracket.py --year 2027
+```
+
+Rerun it as games finish; unplayed games are written as `0`. Key blocks (1-16, 17-32, 33-48, 49-64) are matched to ESPN regions by finding each block's 1-seed (keys 1, 17, 33, 49) from `bracket_keys_YEAR.json`. If there is no key file, pass `--regions East,South,West,Midwest` in key-block order. Use `--dry-run` to print instead of writing and `--output` to choose another file. The script uses ESPN's undocumented scoreboard API, so verify the result after the first games of a season.
+
 ## Methods
 
 ### Seed matchup probabilities
