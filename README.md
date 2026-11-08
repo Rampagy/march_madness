@@ -110,7 +110,7 @@ To verify the current page and archived year pages locally, run a static HTTP se
 python3 -m http.server 8000 --directory site
 ```
 
-Open `http://localhost:8000/`, `http://localhost:8000/about.html`, `http://localhost:8000/2024/`, or `http://localhost:8000/2025/`. Stop the server with `Ctrl+C`. This serves the static files but does not reproduce Nginx or Cloudflare cache headers.
+Open `http://localhost:8000/`, `http://localhost:8000/about.html`, `http://localhost:8000/2024/`, or `http://localhost:8000/2025/`.
 
 ### Yearly rollover
 
