@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="Learn how the March Madness Bracket Challenge generates brackets and summarizes their scores.">
+<title>About | March Madness Bracket Challenge</title>
+<link rel="icon" type="image/svg+xml" href="/favicon.svg">
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<header>
+  <h1>About the project</h1>
+  <nav class="site-nav" aria-label="Site navigation">
+    <a href="/" aria-label="Return to the current tournament dashboard">Current dashboard</a>
+    <a href="https://github.com/Rampagy/march_madness">Source on GitHub</a>
+  </nav>
+</header>
+
+<main class="about-main">
+  <section class="about-intro">
+    <p class="eyebrow">The numbers behind the bracket</p>
+    <h2>A small experiment in big bracket odds.</h2>
+    <p class="about-lead">
+      March Madness Bracket Challenge generates and scores large batches of
+      tournament brackets. The site gives you a look at how those simulated
+      brackets fared against the games as they were played.
+    </p>
+    <a class="button-link" href="/">Explore the current dashboard</a>
+  </section>
+
+  <section aria-labelledby="how-it-works">
+    <h2 id="how-it-works">How it works</h2>
+    <div class="about-cards">
+      <article class="about-card">
+        <span class="about-number" aria-hidden="true">01</span>
+        <h3>Estimate each matchup</h3>
+        <p>
+          The generator uses observed outcomes from past tournament brackets
+          for seed matchups when there is data. For matchups without enough
+          history, a logistic model based on the seed difference fills in.
+        </p>
+      </article>
+      <article class="about-card">
+        <span class="about-number" aria-hidden="true">02</span>
+        <h3>Simulate the tournament</h3>
+        <p>
+          It samples a winner for each game using those matchup probabilities,
+          then advances the winners round by round to create a complete bracket.
+        </p>
+      </article>
+      <article class="about-card">
+        <span class="about-number" aria-hidden="true">03</span>
+        <h3>Compare the results</h3>
+        <p>
+          Brackets are scored against the season’s recorded results. The
+          dashboard shows the score distribution, leading brackets, and how
+          many games have been decided.
+        </p>
+      </article>
+    </div>
+  </section>
+
+  <section aria-labelledby="small-brackets-big-counts">
+    <h2 id="small-brackets-big-counts">Small brackets, big counts</h2>
+    <p>
+      A bracket has 63 games, but storing all 63 winning team numbers is
+      unnecessary. Each game is a choice between two teams, so the current
+      format stores that choice as one bit: zero for the first team in the
+      matchup, one for the second.
+    </p>
+    <div class="bit-visual" role="img" aria-label="A bracket is stored as 63 game-outcome bits and one unused padding bit">
+      <span class="game-bits">63 game outcomes</span>
+      <span class="padding-bit" aria-hidden="true"></span>
+    </div>
+    <p class="muted bit-caption">
+      63 decisions packed into a 64-bit word; one bit is left unused.
+    </p>
+
+    <dl class="tech-stats">
+      <div class="tech-stat">
+        <dt>8 bytes</dt>
+        <dd>per bracket in the current binary format</dd>
+      </div>
+      <div class="tech-stat">
+        <dt>12.48 billion</dt>
+        <dd>brackets represented by the 2026 archive</dd>
+      </div>
+      <div class="tech-stat">
+        <dt>99.84 GB</dt>
+        <dd>of 2026 bracket files, using decimal gigabytes</dd>
+      </div>
+    </dl>
+    <p>
+      That is the size of the 2026 archive in this project, not a promise that
+      every season produces the same volume. The generator splits output after
+      every 120 million brackets, so those 2026 records occupy 104 binary files.
+      The former text and one-byte-per-pick formats are easier to inspect, but
+      need much more space.
+    </p>
+  </section>
+
+  <section class="about-details" aria-labelledby="reading-the-scores">
+    <h2 id="reading-the-scores">Reading the scores</h2>
+    <p>
+      Points double each round: 1 for a first-round game, then 2, 4, 8, 16, and
+      32 for the championship. A perfect bracket across all 63 games earns
+      192 points. While a tournament is underway, the maximum possible score
+      reflects only games that have results so far.
+    </p>
+    <p class="muted">
+      These are simulations based on historical seed outcomes, not guarantees
+      of what will happen in a tournament.
+    </p>
+  </section>
+
+  <footer class="about-footer">
+    <p>
+      <a href="https://github.com/Rampagy/march_madness">View the source and project documentation on GitHub</a>
+    </p>
+  </footer>
+</main>
+</body>
+</html>
